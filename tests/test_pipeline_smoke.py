@@ -85,13 +85,13 @@ def weights_yaml(tmp_path: Path) -> Path:
 
 
 def _spec_for(synthetic_dem: Path) -> tuple[_preprocess.DatasetSpec, ...]:
-    def loader() -> xr.DataArray:
+    def loader(_path: Path) -> xr.DataArray:
         return rioxarray.open_rasterio(synthetic_dem, masked=True).squeeze("band", drop=True)
 
     return (
         _preprocess.DatasetSpec(
             name="lola",
-            raw_check=synthetic_dem,
+            raw_check=(synthetic_dem,),
             loader=loader,
             resampling="bilinear",
             note="synthetic test DEM",

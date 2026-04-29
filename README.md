@@ -62,20 +62,26 @@ data/outputs/validation.json + webmap.html + sites/
 git clone https://github.com/Alex0420W/selene-base.git
 cd selene-base
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e .
 
-# Acquire raw data (idempotent; skips files already on disk)
-selene download robbins         # ~92 MB raw, ~400 KB filtered south-polar slice
-selene download lola            # ~115 MB south-polar DEM (PDS3 IMG + LBL)
-selene download illumination    # ~82 MB Mazarico avgvisib raster
-# selene download diviner / lend / scarps remain TODO-flagged
-
-# Run the pipeline
-selene preprocess               # warps every available raster + Robbins -> crater density
+# Five-line clone-to-webmap path on the bundled ~12 MB sample dataset:
+selene download --sample        # downloads + extracts data/raw/<sample>
+selene preprocess               # warps + crater-density rasterisation -> data/processed/
 selene score                    # six criteria; missing ones renormalise out cleanly
-selene rank --top-n 20 --min-distance-km 25
+selene rank --top-n 20          # NMS + per-criterion sub-scores -> top_sites.{geojson,csv}
+selene viz                      # webmap.html + per-site HTML reports
+
+# Diagnostic & robustness:
 selene validate                 # alignment metrics vs NASA's nine candidates
-selene viz                      # interactive web map + 20 per-site HTML reports
+selene compare                  # per-criterion delta our top-20 vs NASA centroids
+selene sensitivity --n-samples 200   # 200-sample weight-vector simplex sweep
+
+# Full-resolution analysis (~290 MB raw, ~3 verified URLs):
+selene download robbins
+selene download lola
+selene download illumination
+# selene download diviner / lend / scarps remain TODO-flagged
+selene preprocess && selene score && selene rank --top-n 20 --min-distance-km 25
 ```
 
 `selene --help` lists every subcommand; `selene <cmd> --help` shows its options.
@@ -97,7 +103,7 @@ Slope is computed at the 240 m target resolution from the already-downsampled LO
 
 The PSR mask used by the ice criterion is derived from the Mazarico illumination raster (`illumination < 0.001`); this gives the ice criterion something useful to do as soon as the LEND product is wired even if a more authoritative PSR catalog is not.
 
-Default weights from [`config/weights_default.yaml`](config/weights_default.yaml): illumination 0.30, ice 0.25, slope 0.15, thermal 0.10, hazard 0.10, seismic 0.10. With only slope, illumination, and hazard available today, the renormalised effective weights are 0.27 (slope), 0.55 (illumination), 0.18 (hazard). Sweeping the weight vector — the kind of sensitivity experiment that's cheap to run on top of the cached score COGs — is on the week-5 backlog.
+Default weights from [`config/weights_default.yaml`](config/weights_default.yaml): illumination 0.30, ice 0.25, slope 0.15, thermal 0.10, hazard 0.10, seismic 0.10. With only slope, illumination, and hazard available today, the renormalised effective weights are 0.27 (slope), 0.55 (illumination), 0.18 (hazard).
 
 **Planned upgrade — TOPSIS.** A weighted linear sum lets a strong score on one criterion mask a near-disqualifying score on another (e.g. excellent illumination next to an active scarp). TOPSIS ranks each cell by its Euclidean distance to a synthetic "ideal" and "anti-ideal" point in criterion-score space, which penalises lop-sided profiles. It is on the roadmap as an alternate aggregator behind a `--method topsis` flag.
 
@@ -133,6 +139,42 @@ And two for each NASA region:
 
 The honest read: with three of six criteria active and the operationally-dominant two (water-ice proximity, thermal stability) absent, selene-base ranks far-side and inter-crater plains highly because they're flat, low-crater-density, and well-illuminated, but they are not where NASA wants to land. The pipeline behaves correctly given the inputs it has; the result is informative about the limits of partial-criterion analysis. As Diviner / LEND / Watters land, this table updates.
 
+## Robustness
+
+Anyone reading 0/20 fairly asks: *is that just a function of the default weights?* Run `selene sensitivity --n-samples 200` to find out: it draws 200 weight vectors via Latin hypercube on the simplex over the criteria currently available, runs `aggregate → top_n_sites → proximity_analysis` for each, and reports the distribution of "NASA regions matched within 25 km" alongside the default-weight result.
+
+![sensitivity over 200 weight samples](docs/img/sensitivity_distribution.png)
+
+The result is bimodal at 0 and 2 region matches:
+
+- **143 / 200 samples (71.5 %) match 0 regions within 25 km** — the modal outcome. The default-weights result is in this bucket.
+- **56 / 200 samples (28 %) match 2 regions within 25 km** — Slater Plain (25.8 km) and de Gerlache Rim 2 (27.8 km), the two NASA candidates that already sit just beyond the 25 km threshold under the default weights.
+- **0 / 200 samples match more than 2 regions.**
+
+Achieving 2/9 region matches requires an extreme weight regime: the best sample uses `slope = 0.01, illumination = 0.04, hazard = 0.95` — essentially "rank by lowest crater density alone." That regime doesn't *find* additional NASA-aligned sites, it just renames the 25.8 km / 27.8 km near-misses as inside-threshold by virtue of weighting heavily a criterion that happens to score Slater and de Gerlache slightly higher than other plains. **No realistic three-criterion weight regime substantially improves alignment with NASA's selection.** This is the strongest statement we can make about the methodology: the 0/20 result is robust, and the disagreement is structural, not a function of weight choice.
+
+## Diagnostic comparison
+
+Run `selene compare` to ask a sharper question: *at NASA's centroids vs at our top-20, which criteria favour which set, by how much?* The output is a single table that explains the disagreement quantitatively.
+
+![Per-criterion score: where we differ from NASA](docs/img/comparison.png)
+
+| criterion | our top-20 | NASA 9 centroids | delta | \|t\| |
+| --- | --- | --- | ---: | ---: |
+| slope | 0.880 ± 0.089 | 0.285 ± 0.288 | +0.595 | 6.08 |
+| illumination | 0.902 ± 0.063 | 0.321 ± 0.274 | +0.580 | 6.27 |
+| hazard | 0.971 ± 0.031 | 0.969 ± 0.023 | +0.002 | 0.21 |
+
+Three things to notice:
+
+1. **Hazard is essentially identical.** Both NASA's nine and our top-20 sit in low-crater-density terrain (0.97 ± 0.03 vs 0.97 ± 0.02). On the criterion both site sets share, both site sets agree. **Our hazard layer is doing what NASA does.**
+2. **Slope and illumination differ by ~0.6 in our favour.** NASA's regions span steep terrain (slope 0.285 ± 0.288 — note the high variance: Malapert Massif is on a literal massif) and accept low illumination (0.321 ± 0.274). Our pipeline treats both as disqualifying.
+3. **The variance ratio matters as much as the means.** Our top-20 is tightly clustered (std ≈ 0.06–0.09) — the ranking is consistent. NASA's nine span the full range (std ≈ 0.27–0.29) — they're choosing site by site for reasons beyond what slope+illumination+hazard captures.
+
+Reading the table together: NASA's selection accepts low slope and illumination scores in exchange for criteria selene-base does not yet consume — proximity to permanently-shadowed water-ice deposits and stable thermal regimes. When `criteria/ice.py` and `criteria/thermal.py` get their source data, the same `selene compare` rerun will produce different numbers; the diagnostic harness is in place.
+
+The ``|t|`` column is a Welch two-sample t-statistic, reported informationally only. With ``n = 20`` against ``n = 9`` and structurally different sampling, a strict inferential frame is the wrong tool — the values are useful as a *ranking signal* (slope and illumination separate the site sets ~30× more strongly than hazard does), not as p-values.
+
 ## Architecture
 
 ```
@@ -154,7 +196,7 @@ selene-base/
 
 The dependency graph is one-way: `data/` is the foundation; `criteria/` reads loaded rasters; `scoring/` aggregates criterion outputs; `validation/` and `viz/` consume scoring outputs; `pipeline/` orchestrates; `cli.py` exposes the orchestrators. Tests follow the same layering.
 
-206 tests, ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without 200 MB of cached LRO data.
+223 tests, ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without 200 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess → score → rank → validate → compare`, and asserts every output file is on disk and schema-valid.
 
 ## Roadmap
 
@@ -162,11 +204,12 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - **Week 2 — common grid + slope criterion.** ✅ `reproject_to_grid`, COG cache, slope criterion end-to-end on real data.
 - **Week 3 — full scoring + ranking.** ✅ All six criteria (3 on real data, 3 skip cleanly), KDTree crater density, NMS top-N extraction.
 - **Week 4 — validation + visualisation.** ✅ NASA Artemis III proximity comparison, interactive folium web map, per-site HTML reports, validated v0.1.
+- **Week 5 — robustness, diagnostic, sample data.** ✅ Latin-hypercube weight-sensitivity sweep, per-criterion `selene compare` diagnostic, bundled ~12 MB sample tarball, CI pipeline smoke test on the sample.
 - **Future work.**
   - Resolve TODO-flagged URLs (Diviner Tbol max/min, LEND CSETN south-polar map, Watters scarp catalog) and rerun the validation against the now-six-criterion top-N.
-  - Sensitivity analysis: sweep the weight vector and report top-N stability.
   - TOPSIS aggregator behind `--method topsis`.
-  - ML-based criterion inputs (planned in a separate project, [`selene-vision`](https://github.com/Alex0420W/selene-vision)): NAC-imagery-based crater detection, ShadowCam PSR segmentation, illumination surrogate models.
+  - Earth line-of-sight criterion derived from LOLA elevation horizon checks.
+  - ML-based criterion inputs (planned as a separate project, `selene-vision`).
 
 ## References
 

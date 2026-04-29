@@ -72,6 +72,7 @@ Thumbs.db
 data/raw/*
 data/processed/*
 data/outputs/*
+data/sample/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/outputs/.gitkeep

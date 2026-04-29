@@ -5,13 +5,15 @@ idempotent: a second call short-circuits if the file is already on disk
 and meets a minimum-size sanity check. Network access, retry, and
 progress reporting all go through :mod:`selene_base.data._http`.
 
-Filled in week 1.
+Filled in week 1; sample-data path added week 5.
 """
 
 from __future__ import annotations
 
 import gzip
 import io
+import shutil
+import tarfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -287,6 +289,97 @@ def download_lend(dest: Path = DEFAULT_RAW_DIR / "lend") -> Path:
 # ----------------------------------------------------------------------------
 # Aggregate driver
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Sample-data bundle (week 5).
+# ----------------------------------------------------------------------------
+# TODO(week5): URL valid only after the maintainer creates the
+# 'sample-data-v1' GitHub release with sample_data.tar.gz attached.
+# Run scripts/build_sample_data.py to regenerate the tarball.
+SAMPLE_DATA_URL = (
+    "https://github.com/Alex0420W/selene-base/releases/download/sample-data-v1/sample_data.tar.gz"
+)
+SAMPLE_DATA_MIN_BYTES = 1_000_000  # ~12 MB; floor at 1 MB
+_SAMPLE_MARKER = ".sample_extracted"
+
+
+def download_sample_data(
+    raw_dir: Path = DEFAULT_RAW_DIR,
+    *,
+    url: str = SAMPLE_DATA_URL,
+) -> Path:
+    """Download and extract the bundled sample dataset.
+
+    Fetches ``sample_data.tar.gz`` from the GitHub release asset,
+    extracts its contents alongside the regular per-dataset folders so
+    the rest of the pipeline finds them without any extra config:
+
+    - ``data/raw/lola/sample_lola.tif``
+    - ``data/raw/illumination/sample_illumination.tif``
+    - ``data/raw/robbins/robbins_southpole.csv.gz``
+
+    Idempotent: skips if the marker file
+    ``data/raw/.sample_extracted`` exists.
+
+    Args:
+        raw_dir: Destination root (defaults to ``data/raw``).
+        url: Override URL (used by tests).
+
+    Returns:
+        ``raw_dir`` once extraction is complete.
+
+    Raises:
+        AssertionError: If the downloaded archive is smaller than
+            :data:`SAMPLE_DATA_MIN_BYTES`.
+    """
+    raw_dir = Path(raw_dir)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    marker = raw_dir / _SAMPLE_MARKER
+    if marker.exists():
+        typer.echo(f"[skip] sample data already extracted ({marker})")
+        return raw_dir
+
+    archive_path = raw_dir / "sample_data.tar.gz"
+    stream_to_file(
+        url,
+        archive_path,
+        min_bytes=SAMPLE_DATA_MIN_BYTES,
+        label="sample_data.tar.gz",
+    )
+
+    typer.echo(f"[extract] {archive_path}")
+    with tarfile.open(archive_path, "r:gz") as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            # Strip the top-level "sample_data/" prefix so the inner
+            # subdirs land directly under raw_dir.
+            parts = Path(member.name).parts
+            if not parts:
+                continue
+            relative = Path(*parts[1:]) if parts[0] == "sample_data" else Path(*parts)
+            dest = raw_dir / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                continue
+            with dest.open("wb") as out:
+                shutil.copyfileobj(extracted, out)
+            typer.echo(f"  -> {dest}")
+
+    # Robbins sample is stored as robbins_sample.csv.gz; canonicalise the
+    # name the rest of the pipeline expects.
+    rb_sample = raw_dir / "robbins" / "robbins_sample.csv.gz"
+    rb_canonical = raw_dir / "robbins" / "robbins_southpole.csv.gz"
+    if rb_sample.exists() and not rb_canonical.exists():
+        rb_sample.rename(rb_canonical)
+        typer.echo(f"  -> {rb_canonical} (canonical robbins filename)")
+
+    marker.write_text("sample-data-v1\n", encoding="utf-8")
+    archive_path.unlink(missing_ok=True)
+    typer.echo("[done] sample data installed; run `selene preprocess` next.")
+    return raw_dir
+
+
 DATASETS: dict[str, Callable[[Path], Path]] = {
     "robbins": download_robbins,
     "lola": download_lola,

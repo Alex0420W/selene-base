@@ -14,9 +14,11 @@ from pathlib import Path
 import typer
 
 from selene_base.data import download as _download
+from selene_base.pipeline import compare as _compare
 from selene_base.pipeline import preprocess as _preprocess
 from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import score as _score
+from selene_base.pipeline import sensitivity as _sensitivity
 from selene_base.pipeline import validate as _validate
 from selene_base.pipeline import viz as _viz_pipeline
 
@@ -46,12 +48,25 @@ def download(
         Dataset.all,
         help="Dataset to fetch (or 'all' for every dataset).",
     ),
+    sample: bool = typer.Option(
+        False,
+        "--sample",
+        help=(
+            "Fetch the bundled ~12 MB sample dataset instead of the full "
+            "raw products. Lets the pipeline run end-to-end in seconds."
+        ),
+    ),
 ) -> None:
     """Fetch one or all source datasets to ``data/raw/``.
 
     Idempotent: rerunning skips any file already present and large
     enough to pass its sanity-check threshold.
     """
+    if sample:
+        _download.download_sample_data()
+        typer.echo("")
+        typer.echo("Next: selene preprocess && selene score && selene rank")
+        return
     if dataset is Dataset.all:
         results = _download.download_all()
         for name, path in results.items():
@@ -253,6 +268,94 @@ def validate(
         sites_path=sites_path,
         outputs_dir=outputs_dir,
         near_km=near_km,
+    )
+
+
+@app.command()
+def compare(
+    sites_path: Path | None = typer.Option(
+        None,
+        "--sites",
+        help="Top sites GeoJSON. Defaults to <outputs-dir>/top_sites.geojson.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding per-criterion score COGs under scored/.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write comparison.json and comparison.png into.",
+        file_okay=False,
+    ),
+) -> None:
+    """Per-criterion diagnostic: where do our top sites differ from NASA's?"""
+    _compare.run(
+        sites_path=sites_path,
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+    )
+
+
+@app.command()
+def sensitivity(
+    n_samples: int = typer.Option(
+        200,
+        "--n-samples",
+        min=2,
+        help="Number of weight vectors to draw from the simplex.",
+    ),
+    top_n: int = typer.Option(20, "--top-n", min=1, help="Sites to extract per sample."),
+    min_distance_km: float = typer.Option(
+        25.0,
+        "--min-distance-km",
+        help="NMS minimum pairwise separation, in kilometres.",
+    ),
+    near_km: float = typer.Option(
+        25.0,
+        "--near-km",
+        help="Proximity threshold for the headline 'regions matched' metric.",
+    ),
+    far_km: float = typer.Option(
+        100.0,
+        "--far-km",
+        help="Wider proximity threshold reported alongside (e.g. 100 km).",
+    ),
+    seed: int = typer.Option(42, "--seed", help="PRNG seed for the sweep."),
+    weights: Path = typer.Option(
+        Path("config/weights_default.yaml"),
+        "--weights",
+        "-w",
+        help="Default-weights YAML used to mark the histogram baseline.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding per-criterion score COGs under scored/.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write sensitivity_results.parquet + .png into.",
+        file_okay=False,
+    ),
+) -> None:
+    """Sweep weight vectors and report robustness of the validation result."""
+    _sensitivity.run(
+        n_samples=n_samples,
+        top_n=top_n,
+        min_distance_km=min_distance_km,
+        proximity_threshold_km=near_km,
+        far_threshold_km=far_km,
+        seed=seed,
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+        weights_path=weights,
     )
 
 

@@ -42,69 +42,99 @@ DEFAULT_PROCESSED_DIR = Path("data/processed")
 
 @dataclass(frozen=True)
 class DatasetSpec:
-    """How to detect, load, and resample one raw dataset."""
+    """How to detect, load, and resample one raw dataset.
+
+    ``raw_check`` is a tuple of candidate file paths; the first entry
+    that exists is the one used. This lets the same DatasetSpec serve
+    both the full-resolution PDS3 product and the downsampled GeoTIFF
+    that ships in the sample-data tarball.
+    """
 
     name: str
-    raw_check: Path
-    loader: Callable[[], xr.DataArray]
+    raw_check: tuple[Path, ...]
+    loader: Callable[[Path], xr.DataArray]
     resampling: str
     note: str
 
-
-def _lola() -> xr.DataArray:
-    return load_lola_ldem()
-
-
-def _illumination() -> xr.DataArray:
-    return load_illumination()
+    def resolve(self) -> Path | None:
+        for candidate in self.raw_check:
+            if candidate.exists():
+                return candidate
+        return None
 
 
-def _diviner_tmax() -> xr.DataArray:
+def _load_lola_path(path: Path) -> xr.DataArray:
+    # Sample-data TIF carries elevation already in metres; the PDS3
+    # IMG path applies the 0.5 m scale via load_lola_ldem.
+    if path.suffix.lower() == ".tif":
+        from selene_base.data.load import load_raster
+
+        return load_raster(path).rename("elevation_m")
+    return load_lola_ldem(path)
+
+
+def _load_illumination_path(path: Path) -> xr.DataArray:
+    if path.suffix.lower() == ".tif":
+        # The sample-data TIF was produced AFTER load_illumination's
+        # DN -> fraction scaling, so values are already in [0, 1].
+        from selene_base.data.load import load_raster
+
+        return load_raster(path).rename("illumination_fraction")
+    return load_illumination(path)
+
+
+def _load_diviner_tmax_path(_path: Path) -> xr.DataArray:
     return load_diviner().tbol_max
 
 
-def _diviner_tmin() -> xr.DataArray:
+def _load_diviner_tmin_path(_path: Path) -> xr.DataArray:
     return load_diviner().tbol_min
 
 
-def _lend() -> xr.DataArray:
-    return load_lend()
+def _load_lend_path(path: Path) -> xr.DataArray:
+    return load_lend(path)
 
 
 # Resampling rationale documented per dataset; see also README §Methodology.
 RASTER_DATASETS: tuple[DatasetSpec, ...] = (
     DatasetSpec(
         name="lola",
-        raw_check=DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.img",
-        loader=_lola,
+        raw_check=(
+            DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.img",
+            DEFAULT_RAW_DIR / "lola" / "sample_lola.tif",
+        ),
+        loader=_load_lola_path,
         resampling="bilinear",
         note="elevation is a smooth continuous surface; bilinear is correct.",
     ),
     DatasetSpec(
         name="illumination",
-        raw_check=DEFAULT_RAW_DIR / "illumination" / "avgvisib_65s_240m_201608.img",
-        loader=_illumination,
+        raw_check=(
+            DEFAULT_RAW_DIR / "illumination" / "avgvisib_65s_240m_201608.img",
+            DEFAULT_RAW_DIR / "illumination" / "sample_illumination.tif",
+        ),
+        loader=_load_illumination_path,
         resampling="bilinear",
         note="continuous illumination percentage; bilinear preserves it.",
     ),
     DatasetSpec(
         name="diviner_tmax",
-        raw_check=DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_max_sp.tif",
-        loader=_diviner_tmax,
+        raw_check=(DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_max_sp.tif",),
+        loader=_load_diviner_tmax_path,
         resampling="bilinear",
         note="continuous Tbol field; bilinear is correct.",
     ),
     DatasetSpec(
         name="diviner_tmin",
-        raw_check=DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_min_sp.tif",
-        loader=_diviner_tmin,
+        raw_check=(DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_min_sp.tif",),
+        loader=_load_diviner_tmin_path,
         resampling="bilinear",
         note="continuous Tbol field; bilinear is correct.",
     ),
     DatasetSpec(
         name="lend",
-        raw_check=DEFAULT_RAW_DIR / "lend" / "lend_csetn_sp.img",
-        loader=_lend,
+        raw_check=(DEFAULT_RAW_DIR / "lend" / "lend_csetn_sp.img",),
+        loader=_load_lend_path,
         resampling="bilinear",
         note="coarse neutron map; bilinear at 240 m smooths cleanly.",
     ),
@@ -160,13 +190,17 @@ def run(
 
     results: list[PreprocessResult] = []
     for spec in datasets:
-        if not spec.raw_check.exists():
-            echo(f"[skip] {spec.name}: raw file not present ({spec.raw_check})")
+        resolved = spec.resolve()
+        if resolved is None:
+            echo(
+                f"[skip] {spec.name}: raw file not present "
+                f"(checked {[str(p) for p in spec.raw_check]})"
+            )
             results.append(PreprocessResult(spec.name, "missing", None, 0))
             continue
 
-        echo(f"[load] {spec.name} from {spec.raw_check.parent}")
-        src = spec.loader()
+        echo(f"[load] {spec.name} from {resolved.parent}")
+        src = spec.loader(resolved)
         echo(f"[warp] {spec.name} ({spec.resampling})")
         warped = reproject_to_grid(
             src,
