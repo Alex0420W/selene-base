@@ -26,11 +26,13 @@ import xarray as xr
 import yaml
 
 from selene_base.data.load import (
+    load_crater_catalog,
     load_diviner,
     load_illumination,
     load_lend,
     load_lola_ldem,
 )
+from selene_base.data.rasterize import rasterize_crater_density
 from selene_base.data.reproject import cache_processed, reproject_to_grid
 
 DEFAULT_REGION_CONFIG = Path("config/region_southpole.yaml")
@@ -178,7 +180,57 @@ def run(
         echo(f"[done] {spec.name} -> {out_path} ({size:,} bytes)")
         results.append(PreprocessResult(spec.name, "cached", out_path, size))
 
-    echo("[skip] robbins: vector data, rasterised inside the hazard criterion (week 3)")
+    # ------- Robbins → crater-density raster (vector → grid) -------
+    robbins_path = DEFAULT_RAW_DIR / "robbins" / "robbins_southpole.csv.gz"
+    crater_cog = processed_dir / "crater_density_southpole_240m.tif"
+    if not robbins_path.exists():
+        echo(f"[skip] crater_density: Robbins catalog not present ({robbins_path})")
+        results.append(PreprocessResult("crater_density", "missing", None, 0))
+    elif crater_cog.exists() and not overwrite:
+        size = crater_cog.stat().st_size
+        echo(f"[skip] crater_density: {crater_cog.name} already cached")
+        results.append(PreprocessResult("crater_density", "cached", crater_cog, size))
+    else:
+        # Need a target grid to rasterise onto — reuse the LOLA COG if present,
+        # otherwise build a zeros grid in the right CRS.
+        target_path = processed_dir / "lola_southpole_240m.tif"
+        if target_path.exists():
+            import rioxarray  # local import to keep top-level imports light
+
+            target_grid = rioxarray.open_rasterio(target_path, masked=True).squeeze(
+                "band", drop=True
+            )
+        else:
+            import numpy as np
+            import rioxarray  # noqa: F401  (registers .rio accessor)
+            from rasterio.transform import from_origin
+
+            xmin, ymin, xmax, ymax = bounds_m  # type: ignore[misc]
+            width = int(round((xmax - xmin) / resolution_m))
+            height = int(round((ymax - ymin) / resolution_m))
+            target_grid = xr.DataArray(
+                np.zeros((height, width), dtype=np.float32),
+                dims=("y", "x"),
+                coords={
+                    "y": np.linspace(ymax - resolution_m / 2, ymin + resolution_m / 2, height),
+                    "x": np.linspace(xmin + resolution_m / 2, xmax - resolution_m / 2, width),
+                },
+            ).rio.write_crs(target_crs, inplace=False)
+            target_grid.rio.write_transform(
+                from_origin(xmin, ymax, resolution_m, resolution_m), inplace=True
+            )
+
+        echo("[load] robbins crater catalog")
+        craters = load_crater_catalog(robbins_path)
+        echo(f"[rasterise] crater density (n={len(craters):,}, radius=3 km)")
+        density = rasterize_crater_density(
+            craters, target_grid, radius_km=3.0, diameter_col="diam_km"
+        )
+        out_path = cache_processed(density, "crater_density", processed_dir, overwrite=overwrite)
+        size = out_path.stat().st_size
+        echo(f"[done] crater_density -> {out_path} ({size:,} bytes)")
+        results.append(PreprocessResult("crater_density", "cached", out_path, size))
+
     return results
 
 

@@ -189,3 +189,101 @@ def test_score_without_preprocessed_inputs_raises(
             outputs_dir=tmp_path / "outputs",
             echo=lambda _msg: None,
         )
+
+
+def test_pipeline_rank_runs_after_score(
+    tmp_path: Path,
+    synthetic_lola: Path,
+    region_yaml: Path,
+    weights_yaml: Path,
+) -> None:
+    from selene_base.pipeline import rank as _rank
+
+    processed = tmp_path / "processed"
+    outputs = tmp_path / "outputs"
+
+    _preprocess.run(
+        region_config=region_yaml,
+        processed_dir=processed,
+        datasets=_spec_for(synthetic_lola),
+        echo=lambda _msg: None,
+    )
+    _score.run(
+        weights_path=weights_yaml,
+        region_config=region_yaml,
+        processed_dir=processed,
+        outputs_dir=outputs,
+        echo=lambda _msg: None,
+    )
+    sites = _rank.run(
+        processed_dir=processed,
+        outputs_dir=outputs,
+        top_n=5,
+        min_distance_km=1.0,
+        min_score=0.0,  # synthetic plane stays low; let any cell qualify
+        echo=lambda _msg: None,
+    )
+
+    assert (outputs / "top_sites.geojson").exists()
+    assert (outputs / "top_sites.csv").exists()
+    assert len(sites) > 0
+    for col in ("site_id", "rank", "score", "lat", "lon", "score_slope"):
+        assert col in sites.columns
+
+
+def test_cli_rank_exit_zero(
+    tmp_path: Path,
+    synthetic_lola: Path,
+    region_yaml: Path,
+    weights_yaml: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_preprocess, "RASTER_DATASETS", _spec_for(synthetic_lola))
+    processed = tmp_path / "processed"
+    outputs = tmp_path / "outputs"
+
+    runner = CliRunner()
+    pre = runner.invoke(
+        app,
+        [
+            "preprocess",
+            "--region-config",
+            str(region_yaml),
+            "--processed-dir",
+            str(processed),
+        ],
+    )
+    assert pre.exit_code == 0, pre.output
+    sc = runner.invoke(
+        app,
+        [
+            "score",
+            "--weights",
+            str(weights_yaml),
+            "--region-config",
+            str(region_yaml),
+            "--processed-dir",
+            str(processed),
+            "--outputs-dir",
+            str(outputs),
+        ],
+    )
+    assert sc.exit_code == 0, sc.output
+    rk = runner.invoke(
+        app,
+        [
+            "rank",
+            "--top-n",
+            "5",
+            "--min-distance-km",
+            "1.0",
+            "--min-score",
+            "0.0",
+            "--processed-dir",
+            str(processed),
+            "--outputs-dir",
+            str(outputs),
+        ],
+    )
+    assert rk.exit_code == 0, rk.output
+    assert (outputs / "top_sites.geojson").exists()

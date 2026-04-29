@@ -15,6 +15,7 @@ import typer
 
 from selene_base.data import download as _download
 from selene_base.pipeline import preprocess as _preprocess
+from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import score as _score
 
 app = typer.Typer(
@@ -33,6 +34,7 @@ class Dataset(StrEnum):
     diviner = "diviner"
     illumination = "illumination"
     lend = "lend"
+    scarps = "scarps"
     all = "all"
 
 
@@ -148,16 +150,45 @@ def score(
 def rank(
     top_n: int = typer.Option(20, "--top-n", "-n", min=1, help="Number of sites to extract."),
     min_distance_km: float = typer.Option(
-        25.0,
+        5.0,
         "--min-distance-km",
         help="Minimum pairwise distance between returned sites, in kilometres.",
     ),
+    min_score: float = typer.Option(
+        0.5,
+        "--min-score",
+        min=0.0,
+        max=1.0,
+        help="Floor on candidate score; cells below this never enter the running.",
+    ),
+    score_map: Path | None = typer.Option(
+        None,
+        "--score-map",
+        help="Aggregate score COG. Defaults to <outputs-dir>/score_southpole.tif.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding per-criterion score COGs under scored/.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write top_sites.geojson and top_sites.csv into.",
+        file_okay=False,
+    ),
 ) -> None:
-    """Extract the top-N geographically-distinct candidate sites via NMS.
-
-    Filled in week 3.
-    """
-    raise NotImplementedError("filled in week 3")
+    """Extract the top-N geographically-distinct candidate sites via NMS."""
+    _rank.run(
+        score_map_path=score_map,
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+        top_n=top_n,
+        min_distance_km=min_distance_km,
+        min_score=min_score,
+    )
 
 
 @app.command()

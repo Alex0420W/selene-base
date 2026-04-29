@@ -14,6 +14,7 @@ Filled in week 2 (first criterion to land alongside reproject).
 from __future__ import annotations
 
 import numpy as np
+import rioxarray  # noqa: F401  (registers the .rio accessor for crs round-trips)
 import xarray as xr
 
 from selene_base.scoring.normalize import inverse_threshold

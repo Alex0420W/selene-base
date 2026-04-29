@@ -236,6 +236,31 @@ def download_illumination(dest: Path = DEFAULT_RAW_DIR / "illumination") -> Path
     return dest
 
 
+def download_scarps(dest: Path = DEFAULT_RAW_DIR / "scarps") -> Path:
+    """Download Watters et al. lobate-scarp catalog for the lunar south pole.
+
+    .. note::
+       URL is not verified. The Watters catalog is published as
+       supplementary material across multiple papers (2010, 2015,
+       2019); locate or assemble a consolidated south-polar version,
+       or contact the LROC team for the working catalog.
+
+       Place the file at ``data/raw/scarps/scarps_southpole.geojson``
+       (or ``.csv``) with at minimum ``geometry`` (line/multiline) plus
+       ``length_km`` and ``scarp_id`` columns.
+
+    Args:
+        dest: Directory to write into.
+
+    Returns:
+        Path to the downloaded catalog.
+    """
+    raise NotImplementedError(
+        "Watters scarp catalog: source URL not verified. See docstring for the "
+        "manual placement path the seismic criterion expects."
+    )
+
+
 def download_lend(dest: Path = DEFAULT_RAW_DIR / "lend") -> Path:
     """Download the LEND south-polar epithermal-neutron map.
 
@@ -268,6 +293,7 @@ DATASETS: dict[str, Callable[[Path], Path]] = {
     "diviner": download_diviner,
     "illumination": download_illumination,
     "lend": download_lend,
+    "scarps": download_scarps,
 }
 
 

@@ -14,14 +14,18 @@ where the Moon is still tectonically alive.
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-active%20development-yellow)](#roadmap)
 
-> **Status.** Week 2 complete. Reprojection pipeline and slope criterion
-> shipping. Beginning week 3: remaining five criteria.
+> **Status.** Week 3 complete. Six criteria implemented (3 running on
+> real data; thermal/ice/seismic awaiting source data). Ranking and NMS
+> working. Beginning week 4: validation and visualization.
 >
 > Today the pipeline can: download Robbins / LOLA / Mazarico illumination,
 > warp every available raster onto the common 240 m south-polar grid,
-> derive slope from LOLA via central differences, score it with the
-> slope criterion, and aggregate via the (renormalising) weighted sum
-> in `scoring/aggregate.py`. Diviner / LEND URLs remain TODO-flagged in
+> rasterise the Robbins catalog into a crater-density grid, compute six
+> criterion score maps (slope, illumination, hazard from real data;
+> thermal, ice, seismic skip cleanly when their source COG is absent),
+> aggregate via the renormalising weighted sum, and extract the top-N
+> geographically-distinct candidate sites via non-maximum suppression.
+> Diviner / LEND / Watters scarp URLs remain TODO-flagged in
 > [`data/download.py`](src/selene_base/data/download.py).
 
 ## Pipeline (today)
@@ -100,13 +104,16 @@ selene download lend            # URL TODO — verify before running
 selene download all             # convenience: every dataset in turn (idempotent)
 python notebooks/01_data_inventory.py   # writes sanity plots to data/outputs/sanity/
 
-# Week 2 — reproject + slope criterion (real today)
-selene preprocess                                  # warps every available raster to 240 m COGs
-selene score --weights config/weights_default.yaml # week 2 ships slope only; warns on missing criteria
+# Week 2 — reproject + slope criterion
+selene preprocess                                  # warps every available raster + Robbins -> crater density
 python notebooks/02_slope_first_pass.py            # elevation / slope / score side-by-side
 
-# Week 3+ — not yet implemented (still NotImplementedError)
-selene rank --top-n 20
+# Week 3 — full criterion stack + ranking (real today, where data is available)
+selene score --weights config/weights_default.yaml # six criteria; missing ones skip cleanly
+selene rank --top-n 20 --min-distance-km 25        # NMS, GeoJSON + CSV in data/outputs/
+python notebooks/03_full_pipeline.py               # criteria grid, aggregate, top sites
+
+# Week 4 — not yet implemented
 selene viz
 ```
 
@@ -167,11 +174,76 @@ without rebalancing the weights file.
 
 $$ s_\text{slope}(x) = \max\!\left(0,\; 1 - \frac{x}{\theta_\text{max}}\right),\quad \theta_\text{max} = 15° $$
 
-Slope itself is computed via :func:`numpy.gradient` with explicit metric
+Slope itself is computed via `numpy.gradient` with explicit metric
 spacing (Zevenbergen & Thorne 1987 convention), which is the most common
 choice in planetary GIS and gives values within ~5% of the Sobel-weighted
 Horn (1981) kernel on smooth surfaces. Edge pixels and any cell whose
 3×3 stencil touched a NaN are explicitly NaN.
+
+**Illumination** (linear up to a target, flat past it):
+
+$$ s_\text{illum}(x) = \min\!\left(\frac{x}{x_\text{target}},\; 1\right),\quad x_\text{target} = 0.70 $$
+
+Diminishing returns past 70%: power and thermal systems are sized for
+the worst-case duty cycle anyway.
+
+**Thermal** (Gaussian on mean × linear penalty on range):
+
+$$ s_\text{therm}(T_\text{max}, T_\text{min}) = \exp\!\left(-\frac{(\bar{T} - T^\star)^2}{2\sigma^2}\right) \cdot \max\!\left(0,\; 1 - \frac{T_\text{max} - T_\text{min}}{\Delta_\text{max}}\right) $$
+
+with $\bar{T} = (T_\text{max}+T_\text{min})/2$, $T^\star = 180$ K,
+$\sigma = 50$ K, $\Delta_\text{max} = 200$ K. Penalises both
+swing-into-cryo-shadow regimes and far-from-mild-mean regimes.
+
+**Ice** (inverse of normalised neutron flux, plus a near-PSR bonus):
+
+$$ s_\text{ice}(\phi, \mathcal{P}) = \mathrm{clip}\!\left(\bigl(1 - \mathrm{minmax}(\phi)\bigr) + b \cdot \mathbb{1}\bigl[d(p, \mathcal{P}) \le R\bigr],\; 0,\; 1\right) $$
+
+where $\phi$ is the LEND epithermal-neutron flux, $\mathcal{P}$ is the
+permanently-shadowed-region mask (derived from illumination by
+`derive_psr_mask`), $R = 5$ km, $b = 0.3$.
+
+**Hazard** (linear penalty on local crater density):
+
+$$ s_\text{haz}(d) = \mathrm{clip}\!\left(1 - \frac{d}{d_\text{sat}},\; 0,\; 1\right),\quad d_\text{sat} = 50 $$
+
+with $d$ the count of catalogued craters within 3 km of the pixel
+(KDTree query on the Robbins catalog reprojected into the analysis
+grid's CRS).
+
+**Seismic** (linear ramp on distance to nearest active scarp):
+
+$$ s_\text{seis}(\delta) = \mathrm{clip}\!\left(\frac{\delta}{\delta_\text{safe}},\; 0,\; 1\right),\quad \delta_\text{safe} = 50\,\mathrm{km} $$
+
+with $\delta$ the distance (km) from each pixel to the nearest scarp
+feature in the Watters catalog (KDTree on densified scarp vertices).
+
+The aggregate is
+
+$$ S(p) = \sum_{c \in \mathcal{C}} \frac{w_c}{\sum_{c'\in\mathcal{C}} w_{c'}} \cdot s_c(p), $$
+
+where $\mathcal{C}$ is the subset of criteria whose score grid is on
+disk at score-time. Renormalising over $\mathcal{C}$ — rather than the
+full configured weight set — lets weeks 2 and 3 ship a partial pipeline
+without rebalancing the weights file.
+
+### Current results (real data)
+
+Run with the three criteria that have working source data — slope,
+illumination, hazard — and renormalised weights ($\frac{0.15}{0.55}$,
+$\frac{0.30}{0.55}$, $\frac{0.10}{0.55}$):
+
+- **Aggregate:** 6.4 M finite cells, score min/mean/max
+  $0.145 / 0.537 / 0.971$, with 12.4 % above 0.7.
+- **Top-20 sites** (NMS, 25 km min separation, score floor 0.5) all
+  cluster at lat $-79.8\,°$ to $-89.3\,°$ across the full longitude
+  range; top score 0.971 at $(-86.04\,°,\, -176.78\,°)$. The full
+  ranked list (with per-criterion sub-scores) lives at
+  [`data/outputs/top_sites.geojson`](data/outputs/top_sites.geojson)
+  after `selene rank`.
+
+Numbers will shift once Diviner, LEND, and the scarp catalog land —
+their weights currently get redistributed across the present three.
 
 **Illumination** (linear in average sunlit fraction):
 
@@ -276,19 +348,21 @@ selene-base/
 
 A four-week plan, with each module's docstring tagged to its target week.
 
-- **Week 1 — data ingestion.** Implement `data.download.*`, `data.load.*`,
-  and a CLI `selene download` that pulls every product into `data/raw/`. The
-  three normalisation primitives in `scoring.normalize` are already real and
-  tested (they have no upstream dependency), as is `scoring.aggregate.weighted_sum`.
-- **Week 2 — common grid + first criterion.** Implement
-  `data.reproject.reproject_to_grid` and the slope criterion against the LOLA
-  DEM. End-to-end `selene preprocess` should run on the real raw data.
-- **Week 3 — full scoring + ranking.** Implement the remaining five criteria
-  (illumination, thermal, ice, hazard, seismic) and `scoring.ranking.top_n_sites`
-  with non-maximum suppression. `selene score` and `selene rank` work end-to-end.
-- **Week 4 — visualisation + validation.** Implement `viz.webmap.build_webmap`
-  and `viz.site_report.render_site_report`. Run the NASA Artemis III candidate
-  comparison, fill in the results table, and freeze v0.1.
+- **Week 1 — data ingestion.** ✅ `data.download.*`, `data.load.*`, and
+  the typer `selene download` driver are wired and idempotent. Robbins,
+  LOLA, Mazarico illumination download cleanly; Diviner / LEND / scarps
+  URLs remain TODO-flagged.
+- **Week 2 — common grid + first criterion.** ✅
+  `data.reproject.reproject_to_grid`, COG cache, and the slope criterion
+  ship; `selene preprocess` runs on real data and writes 240 m COGs.
+- **Week 3 — full scoring + ranking.** ✅ All six criteria implemented;
+  three (slope, illumination, hazard) run on real data and three skip
+  cleanly when their source data is absent. Non-maximum suppression
+  ranks the top sites; `selene score` and `selene rank` are end-to-end.
+- **Week 4 — visualisation + validation.** *(in progress)* Implement
+  `viz.webmap.build_webmap` and `viz.site_report.render_site_report`,
+  run the NASA Artemis III candidate comparison, fill in the results
+  table, and freeze v0.1.
 
 ## References
 
