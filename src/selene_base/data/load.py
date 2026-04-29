@@ -54,16 +54,17 @@ def load_raster(path: Path) -> xr.DataArray:
     return da
 
 
-def load_lola_ldem(path: Path = DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.img") -> xr.DataArray:
+def load_lola_ldem(path: Path = DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.lbl") -> xr.DataArray:
     """Load the LOLA LDEM 80°S 80 m DEM as elevation in metres.
 
     The PDS3 ``.img`` is a 16-bit signed integer raster scaled by 0.5 m.
-    rioxarray reads the header from the sibling ``.lbl``; we apply the
-    metre scaling so downstream code can assume SI units.
+    GDAL's PDS driver reads the ``.lbl`` and locates the sibling
+    ``.img`` automatically; we apply the 0.5 m scale here so downstream
+    code can assume SI units.
 
     Args:
-        path: Path to ``ldem_80s_80m.img``. The ``.lbl`` must be
-            alongside.
+        path: Path to ``ldem_80s_80m.lbl`` (the PDS3 detached label —
+            the ``.img`` is read via the label).
 
     Returns:
         DataArray of elevation in metres on the file's native polar
@@ -91,23 +92,27 @@ def load_diviner(
     return xr.Dataset({"tbol_max": tmax, "tbol_min": tmin})
 
 
+_ILLUMINATION_SCALE = 0.00004  # per LBL: AVERAGE_VISIBILITY = DN * 0.00004 (max DN 25000 -> 1.0)
+
+
 def load_illumination(
-    path: Path = DEFAULT_RAW_DIR / "illumination" / "avgvisib_65s_240m_201608.img",
+    path: Path = DEFAULT_RAW_DIR / "illumination" / "avgvisib_65s_240m_201608.lbl",
 ) -> xr.DataArray:
     """Load the Mazarico average-illumination south-polar product.
 
-    Pixel values are average solar visibility as percent (0–100) over
-    the 18.6-year lunar precession cycle. We rescale to a [0, 1]
-    fraction here so downstream code is unit-consistent.
+    The PDS3 IMG stores illumination as an int32 DN; per the sibling
+    LBL, ``AVERAGE_VISIBILITY = DN * 0.00004`` so DN 25000 maps to a
+    full-time-sunlit fraction of 1.0. We apply that scale here so
+    downstream code can assume values in [0, 1].
 
     Args:
-        path: Path to ``avgvisib_65s_240m_201608.img``. The ``.lbl`` must
-            be alongside.
+        path: Path to ``avgvisib_65s_240m_201608.lbl`` (the PDS3
+            detached label — the ``.img`` is read via the label).
 
     Returns:
         DataArray of illumination fraction in [0, 1].
     """
-    da = load_raster(path) / 100.0
+    da = load_raster(path) * _ILLUMINATION_SCALE
     return da.rename("illumination_fraction")
 
 

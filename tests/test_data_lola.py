@@ -10,7 +10,7 @@ import xarray as xr
 
 from selene_base.data.load import load_lola_ldem
 
-LOLA_PATH = Path("data/raw/lola/ldem_80s_80m.img")
+LOLA_PATH = Path("data/raw/lola/ldem_80s_80m.lbl")
 
 pytestmark = pytest.mark.skipif(
     not LOLA_PATH.exists(),

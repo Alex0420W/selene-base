@@ -10,7 +10,7 @@ import xarray as xr
 
 from selene_base.data.load import load_illumination
 
-ILLUM_PATH = Path("data/raw/illumination/avgvisib_65s_240m_201608.img")
+ILLUM_PATH = Path("data/raw/illumination/avgvisib_65s_240m_201608.lbl")
 
 pytestmark = pytest.mark.skipif(
     not ILLUM_PATH.exists(),

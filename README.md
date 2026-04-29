@@ -14,12 +14,33 @@ where the Moon is still tectonically alive.
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-active%20development-yellow)](#roadmap)
 
-> **Status.** Active development. Week 1 (data acquisition) in progress.
-> The five-source download pipeline is wired and idempotent; Robbins is
-> verified end-to-end, LOLA and Mazarico illumination URLs are verified
-> against the PDS Geosciences listing, and the Diviner / LEND URLs are
-> TODO-flagged in [`data/download.py`](src/selene_base/data/download.py)
-> until I can confirm the polar-mosaic filenames.
+> **Status.** Week 2 complete. Reprojection pipeline and slope criterion
+> shipping. Beginning week 3: remaining five criteria.
+>
+> Today the pipeline can: download Robbins / LOLA / Mazarico illumination,
+> warp every available raster onto the common 240 m south-polar grid,
+> derive slope from LOLA via central differences, score it with the
+> slope criterion, and aggregate via the (renormalising) weighted sum
+> in `scoring/aggregate.py`. Diviner / LEND URLs remain TODO-flagged in
+> [`data/download.py`](src/selene_base/data/download.py).
+
+## Pipeline (today)
+
+```
+data/raw/<dataset>/        ──load──▶  xr.DataArray (native CRS)
+                              │
+                              ▼ reproject_to_grid(target_crs, bounds, 240 m)
+                              │
+data/processed/<name>_southpole_240m.tif   (cached COG)
+                              │
+                              ▼ criterion.compute(...)  [week 2: slope; week 3: rest]
+                              │
+data/processed/scored/<name>_score_southpole_240m.tif   (per-criterion COG)
+                              │
+                              ▼ scoring.aggregate.weighted_sum(...)
+                              │
+data/outputs/score_southpole.tif   (final aggregate COG)
+```
 
 ## Architecture
 
@@ -70,19 +91,21 @@ cd selene-base
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# Week 1 — data acquisition (real today)
+# Week 1 — data acquisition
 selene download robbins         # ~92 MB raw, ~400 KB filtered south-polar slice
 selene download lola            # ~115 MB south-polar DEM (PDS3 IMG + LBL)
 selene download illumination    # ~82 MB Mazarico avgvisib raster
 selene download diviner         # URL TODO — verify before running
 selene download lend            # URL TODO — verify before running
 selene download all             # convenience: every dataset in turn (idempotent)
-
 python notebooks/01_data_inventory.py   # writes sanity plots to data/outputs/sanity/
 
-# Week 2+ — not yet implemented (still NotImplementedError)
-selene preprocess
-selene score --weights config/weights_default.yaml
+# Week 2 — reproject + slope criterion (real today)
+selene preprocess                                  # warps every available raster to 240 m COGs
+selene score --weights config/weights_default.yaml # week 2 ships slope only; warns on missing criteria
+python notebooks/02_slope_first_pass.py            # elevation / slope / score side-by-side
+
+# Week 3+ — not yet implemented (still NotImplementedError)
 selene rank --top-n 20
 selene viz
 ```
@@ -112,15 +135,43 @@ All datasets are reprojected onto a single south-polar stereographic grid
 (`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`) at 240 m / pixel over
 ±304 km, defined in [`config/region_southpole.yaml`](config/region_southpole.yaml).
 
+### Resampling choices per dataset
+
+| Dataset | Resampling | Why |
+| --- | --- | --- |
+| LOLA elevation | bilinear | smooth continuous surface; bilinear is standard |
+| Illumination | bilinear | continuous percentage; bilinear preserves the dynamic range |
+| Diviner Tmax/Tmin (when wired) | bilinear | continuous Tbol field |
+| LEND (when wired) | bilinear | already coarse, smoothing OK at 240 m |
+| Robbins | n/a | vector, rasterised by the hazard criterion in week 3 |
+
+The slope criterion derives its gradient from the **already-downsampled
+240 m DEM**, not from the native 80 m LOLA DEM averaged after-the-fact.
+Computing slope on the high-res DEM and then averaging slope-degrees
+double-smooths and biases towards lower values; computing slope on the
+target-resolution DEM keeps the result self-consistent with the rest of
+the analysis grid.
+
 ## Scoring methodology
 
 Each criterion produces a [0, 1] score grid, where 1 is best and 0 is unusable.
 Three normalisation primitives in [`scoring/normalize.py`](src/selene_base/scoring/normalize.py)
-cover every criterion.
+cover every criterion. The aggregate
+[`scoring/aggregate.py`](src/selene_base/scoring/aggregate.py) tolerates
+missing criteria: weights for criteria that aren't yet implemented are
+silently dropped (with a warning) and the remaining weights are
+renormalised to sum to 1, so weeks 2 and 3 can ship a partial pipeline
+without rebalancing the weights file.
 
-**Slope** (lower is better, hard cutoff at 10°):
+**Slope** (lower is better, hard cutoff at 15°):
 
-$$ s_\text{slope}(x) = \max\!\left(0,\; 1 - \frac{x}{\theta_\text{max}}\right),\quad \theta_\text{max} = 10° $$
+$$ s_\text{slope}(x) = \max\!\left(0,\; 1 - \frac{x}{\theta_\text{max}}\right),\quad \theta_\text{max} = 15° $$
+
+Slope itself is computed via :func:`numpy.gradient` with explicit metric
+spacing (Zevenbergen & Thorne 1987 convention), which is the most common
+choice in planetary GIS and gives values within ~5% of the Sobel-weighted
+Horn (1981) kernel on smooth surfaces. Edge pixels and any cell whose
+3×3 stencil touched a NaN are explicitly NaN.
 
 **Illumination** (linear in average sunlit fraction):
 

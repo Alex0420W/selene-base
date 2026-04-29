@@ -14,6 +14,8 @@ from pathlib import Path
 import typer
 
 from selene_base.data import download as _download
+from selene_base.pipeline import preprocess as _preprocess
+from selene_base.pipeline import score as _score
 
 app = typer.Typer(
     name="selene",
@@ -57,16 +59,40 @@ def download(
 
 
 @app.command()
-def preprocess() -> None:
-    """Reproject every raw raster onto the common south-polar grid.
+def preprocess(
+    region_config: Path = typer.Option(
+        Path("config/region_southpole.yaml"),
+        "--region-config",
+        help="Path to the south-polar grid definition YAML.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory to write cached COGs into.",
+        file_okay=False,
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Re-cache COGs even if they already exist on disk.",
+    ),
+) -> None:
+    """Reproject every available raw raster onto the common 240 m grid.
 
-    Reads ``config/region_southpole.yaml`` for the target CRS, bounds,
-    and resolution, then writes Cloud-Optimized GeoTIFFs into
-    ``data/processed/``.
-
-    Filled in week 2.
+    Idempotent: rasters already cached as
+    ``data/processed/<name>_southpole_240m.tif`` are skipped unless
+    ``--overwrite`` is set. Datasets whose raw bytes are missing are
+    logged and skipped; Robbins (vector) is rasterised by the hazard
+    criterion in week 3 and is not warped here.
     """
-    raise NotImplementedError("filled in week 2")
+    results = _preprocess.run(
+        region_config=region_config,
+        processed_dir=processed_dir,
+        overwrite=overwrite,
+    )
+    typer.echo("")
+    typer.echo(_preprocess.format_summary(results))
 
 
 @app.command()
@@ -79,15 +105,43 @@ def score(
         exists=False,
         dir_okay=False,
     ),
+    region_config: Path = typer.Option(
+        Path("config/region_southpole.yaml"),
+        "--region-config",
+        help="Path to the south-polar grid definition YAML.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding cached input + per-criterion score COGs.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write the aggregate score COG into.",
+        file_okay=False,
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Re-compute per-criterion score COGs even if cached.",
+    ),
 ) -> None:
-    """Run every criterion and aggregate into a single suitability map.
+    """Run every available criterion and aggregate into one score map.
 
-    Each criterion in :mod:`selene_base.criteria` produces a [0, 1] score
-    grid; :func:`selene_base.scoring.aggregate.weighted_sum` combines them.
-
-    Filled in week 3.
+    Week 2 ships ``slope`` only; missing criteria trigger a warning and
+    the remaining weights are renormalised. Output:
+    ``<outputs_dir>/score_southpole.tif``.
     """
-    raise NotImplementedError("filled in week 3")
+    _score.run(
+        weights_path=weights,
+        region_config=region_config,
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+        overwrite=overwrite,
+    )
 
 
 @app.command()
