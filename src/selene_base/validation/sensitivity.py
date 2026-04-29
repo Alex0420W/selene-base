@@ -237,6 +237,96 @@ def sweep_weights(
     return pd.DataFrame(rows)
 
 
+def sweep_coupling_distance(
+    score_maps_without_coupling: Mapping[str, xr.DataArray],
+    distance_to_psr: xr.DataArray,
+    distance_to_ridge: xr.DataArray,
+    weights: Mapping[str, float],
+    nasa_regions: gpd.GeoDataFrame,
+    *,
+    distances_km: list[float] | None = None,
+    top_n: int = 20,
+    min_distance_km: float = 25.0,
+    proximity_threshold_km: float = 25.0,
+    far_threshold_km: float = 100.0,
+    min_score: float = 0.0,
+) -> pd.DataFrame:
+    """Sweep ``coupling_distance_km``; recompute coupling and aggregate each.
+
+    Args:
+        score_maps_without_coupling: The five non-coupling per-criterion
+            score grids (slope, illumination, hazard, thermal, ice).
+        distance_to_psr: Pre-computed distance grid (metres) from
+            :func:`selene_base.criteria.coupling.derive_distance_to_psr`.
+        distance_to_ridge: Pre-computed distance grid (metres) from
+            :func:`selene_base.criteria.coupling.derive_distance_to_sunlit_ridge`.
+        weights: Weight vector (must include ``coupling`` plus every
+            entry in ``score_maps_without_coupling``).
+        nasa_regions: NASA Artemis III GeoDataFrame from
+            :func:`selene_base.validation.nasa_regions.regions_to_geodataframe`.
+        distances_km: List of coupling-distance values to test.
+            Defaults to ``[1, 2, 3, 5, 7, 10, 15, 20]`` km.
+        top_n: NMS site count.
+        min_distance_km: NMS minimum pairwise separation, in km.
+        proximity_threshold_km: Distance for the headline "regions
+            matched" metric.
+        far_threshold_km: Wider distance reported alongside.
+        min_score: Floor on candidate site score.
+
+    Returns:
+        DataFrame with one row per ``coupling_distance_km`` tested:
+
+        - ``coupling_distance_km``
+        - ``n_inside_region``, ``n_within_proximity_km``,
+          ``n_within_far_km``
+        - ``n_regions_with_top_site``,
+          ``n_regions_within_proximity_km``
+        - ``mean_score_at_nasa_centroids``, ``mean_top_n_score``
+    """
+    if distances_km is None:
+        distances_km = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0]
+
+    from selene_base.criteria import coupling as coupling_criterion
+
+    rows: list[dict[str, float]] = []
+    for d_km in distances_km:
+        coupling_score = coupling_criterion.compute(
+            distance_to_psr,
+            distance_to_ridge,
+            coupling_distance_km=d_km,
+        )
+        score_maps = dict(score_maps_without_coupling)
+        score_maps["coupling"] = coupling_score
+        names = sorted(score_maps.keys())
+        weight_vec = np.array([float(weights[n]) for n in names], dtype=np.float64)
+        weight_vec /= weight_vec.sum()
+        weight_samples = weight_vec.reshape(1, -1)
+        result = sweep_weights(
+            score_maps,
+            weight_samples,
+            nasa_regions,
+            top_n=top_n,
+            min_distance_km=min_distance_km,
+            proximity_threshold_km=proximity_threshold_km,
+            far_threshold_km=far_threshold_km,
+            min_score=min_score,
+            criterion_order=names,
+        )
+        row = {"coupling_distance_km": float(d_km)}
+        for col in (
+            "n_inside_region",
+            "n_within_proximity_km",
+            "n_within_far_km",
+            "n_regions_with_top_site",
+            "n_regions_within_proximity_km",
+            "mean_score_at_nasa_centroids",
+            "mean_top_n_score",
+        ):
+            row[col] = float(result[col].iloc[0])
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def best_weights(results: pd.DataFrame, criterion_names: list[str]) -> dict[str, float]:
     """Pick the sample with the most NASA regions matched within proximity.
 

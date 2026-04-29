@@ -15,6 +15,7 @@ import typer
 
 from selene_base.data import download as _download
 from selene_base.pipeline import compare as _compare
+from selene_base.pipeline import coupling_sweep as _coupling_sweep
 from selene_base.pipeline import preprocess as _preprocess
 from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import score as _score
@@ -356,6 +357,56 @@ def sensitivity(
         processed_dir=processed_dir,
         outputs_dir=outputs_dir,
         weights_path=weights,
+    )
+
+
+@app.command(name="coupling-sweep")
+def coupling_sweep(
+    distances_km: list[float] = typer.Option(
+        [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0],
+        "--distance-km",
+        help="Coupling-distance values (km) to sweep over. Repeatable.",
+    ),
+    top_n: int = typer.Option(20, "--top-n", min=1, help="Sites per sweep."),
+    min_distance_km: float = typer.Option(
+        25.0,
+        "--min-distance-km",
+        help="NMS minimum pairwise separation, in kilometres.",
+    ),
+    near_km: float = typer.Option(
+        25.0,
+        "--near-km",
+        help="Proximity threshold for the 'regions matched' metric.",
+    ),
+    weights: Path = typer.Option(
+        Path("config/weights_default.yaml"),
+        "--weights",
+        "-w",
+        help="Weights YAML; the coupling weight is honoured.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding cached input + per-criterion score COGs.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write coupling_sweep.parquet + .png into.",
+        file_okay=False,
+    ),
+) -> None:
+    """Sweep the spatial-coupling distance and report NASA-region alignment."""
+    _coupling_sweep.run(
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+        weights_path=weights,
+        distances_km=list(distances_km),
+        top_n=top_n,
+        min_distance_km=min_distance_km,
+        proximity_threshold_km=near_km,
     )
 
 

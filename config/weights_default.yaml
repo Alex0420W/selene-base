@@ -1,6 +1,19 @@
-illumination: 0.30
-ice: 0.25
+# selene-base default weights (week 7+).
+#
+# Rationale: the spatial-coupling criterion captures NASA's actual
+# selection logic — "near a PSR AND near a sunlit ridge" — as a single
+# derived criterion. We weight it equal to illumination and ice (each
+# 0.20) because the hypothesis is that the conjunction is the
+# decision-relevant signal these three criteria collectively express.
+#
+# The pre-week-7 weight vector (no coupling criterion) is preserved as
+# config/weights_legacy.yaml; pass `--weights config/weights_legacy.yaml`
+# to reproduce the 5-criterion baseline.
+
+illumination: 0.20
+ice: 0.20
+coupling: 0.20
 slope: 0.15
 thermal: 0.10
 hazard: 0.10
-seismic: 0.10
+seismic: 0.05

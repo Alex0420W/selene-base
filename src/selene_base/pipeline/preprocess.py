@@ -197,6 +197,33 @@ def run(
         echo(f"[done] {spec.name} -> {out_path} ({size:,} bytes)")
         results.append(PreprocessResult(spec.name, "cached", out_path, size))
 
+    # ------- LOLA → slope-degrees raster (cached for slope + coupling) -------
+    lola_cog = processed_dir / "lola_southpole_240m.tif"
+    slope_cog = processed_dir / "lola_slope_deg_southpole_240m.tif"
+    if not lola_cog.exists():
+        echo(f"[skip] lola_slope_deg: LOLA COG not cached at {lola_cog}")
+        results.append(PreprocessResult("lola_slope_deg", "missing", None, 0))
+    elif slope_cog.exists() and not overwrite:
+        size = slope_cog.stat().st_size
+        echo(f"[skip] lola_slope_deg: {slope_cog.name} already cached")
+        results.append(PreprocessResult("lola_slope_deg", "cached", slope_cog, size))
+    else:
+        import rioxarray
+
+        from selene_base.criteria.slope import derive_slope_degrees
+
+        echo(f"[derive] lola_slope_deg from {lola_cog.name}")
+        elevation = (
+            rioxarray.open_rasterio(lola_cog, masked=True)
+            .squeeze("band", drop=True)
+            .rename("elevation_m")
+        )
+        slope_deg = derive_slope_degrees(elevation, pixel_size_m=resolution_m)
+        out_path = cache_processed(slope_deg, "lola_slope_deg", processed_dir, overwrite=overwrite)
+        size = out_path.stat().st_size
+        echo(f"[done] lola_slope_deg -> {out_path} ({size:,} bytes)")
+        results.append(PreprocessResult("lola_slope_deg", "cached", out_path, size))
+
     # ------- Robbins → crater-density raster (vector → grid) -------
     robbins_path = DEFAULT_RAW_DIR / "robbins" / "robbins_southpole.csv.gz"
     crater_cog = processed_dir / "crater_density_southpole_240m.tif"
