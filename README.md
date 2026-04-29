@@ -1,385 +1,187 @@
 # selene-base
 
-A multi-criteria habitat suitability engine for the lunar south pole. `selene-base`
-fuses LRO-era datasets — LOLA topography, Diviner thermal climatology, Mazarico
-illumination maps, LEND hydrogen abundance, the Robbins crater catalog, and the
-Watters lobate-scarp catalog — into a single ranked list of candidate Artemis base
-sites. It is unusual in that it grounds the modern remote-sensing pipeline against
-the historical Apollo seismic record (re-localised to active scarps by Civilini et
-al., 2023), so a site's "no-go" zones reflect not just slope and shadow but also
-where the Moon is still tectonically alive.
+> Multi-criteria habitat suitability for the lunar south pole, validated against NASA's nine announced Artemis III candidate landing regions.
 
 [![CI](https://img.shields.io/badge/ci-pending-lightgrey)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![Status](https://img.shields.io/badge/status-active%20development-yellow)](#roadmap)
+[![Status](https://img.shields.io/badge/status-v0.1-brightgreen)](#roadmap)
 
-> **Status.** Week 3 complete. Six criteria implemented (3 running on
-> real data; thermal/ice/seismic awaiting source data). Ranking and NMS
-> working. Beginning week 4: validation and visualization.
->
-> Today the pipeline can: download Robbins / LOLA / Mazarico illumination,
-> warp every available raster onto the common 240 m south-polar grid,
-> rasterise the Robbins catalog into a crater-density grid, compute six
-> criterion score maps (slope, illumination, hazard from real data;
-> thermal, ice, seismic skip cleanly when their source COG is absent),
-> aggregate via the renormalising weighted sum, and extract the top-N
-> geographically-distinct candidate sites via non-maximum suppression.
-> Diviner / LEND / Watters scarp URLs remain TODO-flagged in
-> [`data/download.py`](src/selene_base/data/download.py).
+NASA's Artemis III mission will land humans near the lunar south pole around 2027. Selecting a base site there is a multi-criteria optimisation problem: the south pole is a maze of crater rims that catch grazing sunlight, deep permanently-shadowed cold-traps that may host water ice, and active thrust faults that re-localised Apollo-era shallow moonquakes have placed within tens of kilometres of candidate sites. **`selene-base`** fuses the modern LRO-era remote-sensing record (LOLA topography, Diviner thermal climatology, Mazarico illumination maps, LEND hydrogen abundance, the Robbins crater catalog, the Watters lobate-scarp catalog) with the historical Apollo seismic context to score every 240 m pixel of the polar cap and rank top candidate sites. The pipeline is end-to-end reproducible — `selene download && selene preprocess && selene score && selene rank && selene validate && selene viz` produces a ranked GeoJSON of sites, a per-site HTML report, and an interactive web map, on a developer laptop, in minutes, from public data.
 
-## Pipeline (today)
+## Headline result
+
+Run on the three criteria with verified source data today (slope from LOLA, illumination from Mazarico, impact-hazard from the Robbins catalog rasterised at 3 km), with the remaining three criteria (thermal, ice, seismic) wired against the expected interfaces but skipping cleanly while their NASA archives remain TODO-flagged:
+
+> **0 of selene-base's top 20 candidate sites land inside any of NASA's nine Artemis III candidate regions; 0 of 20 fall within 25 km of any centroid.** Two NASA regions — Slater Plain and de Gerlache Rim 2 — have a top-20 site between 25 and 30 km away; the rest are 50–157 km from the nearest top site. NASA's centroids score 0.20 to 0.63 on our aggregate map (max 0.97, 95th percentile 0.74) — comfortably below the 20th-best site at 0.88.
+
+This is a **real disagreement**, not a bug, and the explanation is structural: NASA's selection emphasises proximity to permanently-shadowed water-ice deposits and Earth line-of-sight corridors. Both depend on criteria selene-base implements but cannot yet feed (`criteria/ice.py` needs a south-polar LEND product; `criteria/thermal.py` needs Diviner Tbol mosaics; `criteria/seismic.py` needs the Watters lobate-scarp catalog). The renormalised three-criterion regime that runs today instead favours flat, low-crater-density plains, which exist at every longitude — pulling the top-N off NASA's preferred meridian band. As the missing inputs land, the same pipeline will re-evaluate against the same nine NASA regions; the validation harness is in place.
+
+![selene-base top 20 candidates vs NASA Artemis III regions](docs/img/webmap_screenshot.png)
+
+| metric | value |
+| --- | --- |
+| top sites inside any NASA region (15 km disk) | 0 / 20 |
+| top sites within 25 km of any NASA centroid | 0 / 20 |
+| NASA regions with a top site within 30 km | 2 / 9 (Slater Plain, de Gerlache Rim 2) |
+| NASA regions with a top site within 100 km | 8 / 9 (all but Cabeus B) |
+| top-20 score range | 0.880–0.971 |
+| score range across NASA centroids | 0.205 (Malapert Massif) – 0.629 (Cabeus B) |
+
+For the per-region distance table see `data/outputs/validation.json`, or run `selene validate` on a fresh checkout to regenerate it. The interactive map lives at [`data/outputs/webmap.html`](data/outputs/webmap.html) after `selene viz`; per-site HTML reports under [`data/outputs/sites/`](data/outputs/sites/).
+
+## Pipeline
 
 ```
 data/raw/<dataset>/        ──load──▶  xr.DataArray (native CRS)
                               │
                               ▼ reproject_to_grid(target_crs, bounds, 240 m)
                               │
-data/processed/<name>_southpole_240m.tif   (cached COG)
+data/processed/<name>_southpole_240m.tif        (cached COG)
                               │
-                              ▼ criterion.compute(...)  [week 2: slope; week 3: rest]
+                              ▼ criterion.compute(...)            [six criteria]
                               │
-data/processed/scored/<name>_score_southpole_240m.tif   (per-criterion COG)
+data/processed/scored/<name>_score_southpole_240m.tif
                               │
-                              ▼ scoring.aggregate.weighted_sum(...)
+                              ▼ scoring.aggregate.weighted_sum()  [renormalises]
                               │
-data/outputs/score_southpole.tif   (final aggregate COG)
+data/outputs/score_southpole.tif                (final aggregate COG)
+                              │
+                              ▼ scoring.ranking.top_n_sites()     [NMS at 25 km]
+                              │
+data/outputs/top_sites.{geojson,csv}            (ranked sites + per-criterion sub-scores)
+                              │
+                              ▼ validation.comparison + viz
+                              │
+data/outputs/validation.json + webmap.html + sites/
 ```
 
-## Architecture
-
-```
-                ┌───────────────┐
-   raw rasters  │ data.download │   (LOLA, Diviner, illumination, LEND,
-   + catalogs   │  data.load    │    Robbins craters, Watters scarps)
-                └──────┬────────┘
-                       │
-                       ▼
-                ┌───────────────┐
-                │ data.reproject│   south-polar stereographic, 240 m,
-                │  → 240 m grid │   bounds ±304 km, lat ≤ -80°
-                └──────┬────────┘
-                       │
-        ┌──────────────┼──────────────┬──────────────┬──────────────┐
-        ▼              ▼              ▼              ▼              ▼
-   ┌─────────┐   ┌──────────┐   ┌─────────┐   ┌────────┐    ┌──────────┐
-   │ slope   │   │ illum.   │   │ thermal │   │  ice   │    │ hazard   │
-   │criterion│   │criterion │   │criterion│   │criterion│    │ + seismic│
-   └────┬────┘   └────┬─────┘   └────┬────┘   └───┬────┘    └────┬─────┘
-        └────────────┴───────────────┴────────────┴──────────────┘
-                                  │
-                                  ▼
-                        ┌───────────────────┐
-                        │ scoring.aggregate │   weighted_sum →
-                        │  (weighted sum)   │   suitability map ∈ [0,1]
-                        └─────────┬─────────┘
-                                  │
-                                  ▼
-                        ┌───────────────────┐
-                        │ scoring.ranking   │   non-maximum suppression,
-                        │  (top-N + NMS)    │   min separation 25 km
-                        └─────────┬─────────┘
-                                  │
-                                  ▼
-                        ┌───────────────────┐
-                        │ viz.webmap        │   folium HTML +
-                        │ viz.site_report   │   per-site HTML reports
-                        └───────────────────┘
-```
-
-## Quickstart
+### Quickstart
 
 ```bash
-git clone https://github.com/<you>/selene-base.git
+git clone https://github.com/Alex0420W/selene-base.git
 cd selene-base
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# Week 1 — data acquisition
+# Acquire raw data (idempotent; skips files already on disk)
 selene download robbins         # ~92 MB raw, ~400 KB filtered south-polar slice
 selene download lola            # ~115 MB south-polar DEM (PDS3 IMG + LBL)
 selene download illumination    # ~82 MB Mazarico avgvisib raster
-selene download diviner         # URL TODO — verify before running
-selene download lend            # URL TODO — verify before running
-selene download all             # convenience: every dataset in turn (idempotent)
-python notebooks/01_data_inventory.py   # writes sanity plots to data/outputs/sanity/
+# selene download diviner / lend / scarps remain TODO-flagged
 
-# Week 2 — reproject + slope criterion
-selene preprocess                                  # warps every available raster + Robbins -> crater density
-python notebooks/02_slope_first_pass.py            # elevation / slope / score side-by-side
-
-# Week 3 — full criterion stack + ranking (real today, where data is available)
-selene score --weights config/weights_default.yaml # six criteria; missing ones skip cleanly
-selene rank --top-n 20 --min-distance-km 25        # NMS, GeoJSON + CSV in data/outputs/
-python notebooks/03_full_pipeline.py               # criteria grid, aggregate, top sites
-
-# Week 4 — not yet implemented
-selene viz
+# Run the pipeline
+selene preprocess               # warps every available raster + Robbins -> crater density
+selene score                    # six criteria; missing ones renormalise out cleanly
+selene rank --top-n 20 --min-distance-km 25
+selene validate                 # alignment metrics vs NASA's nine candidates
+selene viz                      # interactive web map + 20 per-site HTML reports
 ```
 
 `selene --help` lists every subcommand; `selene <cmd> --help` shows its options.
-Every download is idempotent: rerunning skips files already on disk that
-pass their minimum-size sanity check.
 
-## Data sources
+## Methodology
 
-| Dataset | Product | Resolution | URL status | Role in scoring |
-| --- | --- | --- | --- | --- |
-| LOLA south-polar DEM | `ldem_80s_80m.{img,lbl}` (PDS3) | 80 m / pixel | [verified](https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/polar/img/) | slope, elevation context |
-| Mazarico illumination | `avgvisib_65s_240m_201608.{img,lbl}` | 240 m / pixel | [verified](https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/extras/illumination/release_2016/img/) | illumination fraction |
-| Robbins crater catalog | PDS4 bundle CSV (Robbins 2018) | vector, Ø ≥ 1 km | [verified](https://astrogeology.usgs.gov/search/map/Moon/Research/Craters/lunar_crater_database_robbins_2018) | impact / ejecta hazard |
-| Diviner Tbol max/min | UCLA `level4_polar/` mosaics | ~240 m / pixel | **TODO** — filename unverified | thermal stability |
-| LEND epithermal flux | polar neutron-flux map | ~5–10 km / pixel | **TODO** — product not located | water-ice proxy |
-| Watters lobate scarps | catalog (Watters et al. 2015) | vector | not yet wired | seismic exclusion |
+Every criterion produces a `[0, 1]` score grid where 1 is "best" and 0 is "unusable", aligned to the common 240 m south-polar stereographic grid (`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`, ±304 km, defined in [`config/region_southpole.yaml`](config/region_southpole.yaml)). Three normalisation primitives in [`scoring/normalize.py`](src/selene_base/scoring/normalize.py) — `min_max`, `optimal_range` (Gaussian), `inverse_threshold` — cover every criterion. The aggregate is a weighted linear sum that **renormalises across whichever criteria are present at score-time**, so a partial pipeline (today: slope, illumination, hazard) produces a comparable score to a complete one — only the absolute meaning of "0.97" shifts.
 
-**TODO URLs** are flagged in [`src/selene_base/data/download.py`](src/selene_base/data/download.py)
-with the original PDS / archive starting points; verify before running
-`selene download diviner` or `selene download lend`. The Watters scarp
-download is still on the backlog and will land alongside the seismic
-criterion in week 3.
+| Criterion | Score function | Source dataset | Resolution | Resampling | Default knobs |
+| --- | --- | --- | --- | --- | --- |
+| **Slope** | $s = \max(0,\,1-x/\theta_{\max})$ | LOLA LDEM 80 m (PDS3) | 80 m → 240 m | bilinear | $\theta_{\max} = 15°$ |
+| **Illumination** | $s = \min(x/x_t,\,1)$ | Mazarico avgvisib 65°S 240 m | 240 m | bilinear | $x_t = 0.70$ |
+| **Thermal** | $s = e^{-(\bar T - T^\star)^2/(2\sigma^2)} \cdot \max(0,\,1-(T_{\max}-T_{\min})/\Delta_{\max})$ | Diviner Tbol max/min (TODO) | ~240 m | bilinear | $T^\star=180\,$K, $\sigma=50\,$K, $\Delta_{\max}=200\,$K |
+| **Ice** | $s = \mathrm{clip}(1-\mathrm{minmax}(\phi) + b\cdot\mathbb{1}[d(p, \mathcal{P})\le R],\,0,\,1)$ | LEND CSETN flux + PSR mask (TODO) | ~5–10 km | bilinear | $R=5\,$km, $b=0.3$ |
+| **Hazard** | $s = \mathrm{clip}(1-d/d_{\mathrm{sat}},\,0,\,1)$ | Robbins 2018 catalog | vector → 240 m density | KDTree, 3 km radius | $d_{\mathrm{sat}}=50$ |
+| **Seismic** | $s = \mathrm{clip}(\delta/\delta_{\mathrm{safe}},\,0,\,1)$ | Watters scarp catalog (TODO) | vector → 240 m distance | KDTree, 1 km densified vertices | $\delta_{\mathrm{safe}}=50\,$km |
 
-All datasets are reprojected onto a single south-polar stereographic grid
-(`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`) at 240 m / pixel over
-±304 km, defined in [`config/region_southpole.yaml`](config/region_southpole.yaml).
+Slope is computed at the 240 m target resolution from the already-downsampled LOLA DEM via `numpy.gradient` with explicit metric spacing (Zevenbergen & Thorne 1987 convention; ~5 % off Horn 1981 on smooth surfaces). Computing slope on the high-res 80 m DEM and then averaging slope-degrees double-smooths and biases low; computing on the target-resolution DEM keeps everything self-consistent.
 
-### Resampling choices per dataset
+The PSR mask used by the ice criterion is derived from the Mazarico illumination raster (`illumination < 0.001`); this gives the ice criterion something useful to do as soon as the LEND product is wired even if a more authoritative PSR catalog is not.
 
-| Dataset | Resampling | Why |
-| --- | --- | --- |
-| LOLA elevation | bilinear | smooth continuous surface; bilinear is standard |
-| Illumination | bilinear | continuous percentage; bilinear preserves the dynamic range |
-| Diviner Tmax/Tmin (when wired) | bilinear | continuous Tbol field |
-| LEND (when wired) | bilinear | already coarse, smoothing OK at 240 m |
-| Robbins | n/a | vector, rasterised by the hazard criterion in week 3 |
+Default weights from [`config/weights_default.yaml`](config/weights_default.yaml): illumination 0.30, ice 0.25, slope 0.15, thermal 0.10, hazard 0.10, seismic 0.10. With only slope, illumination, and hazard available today, the renormalised effective weights are 0.27 (slope), 0.55 (illumination), 0.18 (hazard). Sweeping the weight vector — the kind of sensitivity experiment that's cheap to run on top of the cached score COGs — is on the week-5 backlog.
 
-The slope criterion derives its gradient from the **already-downsampled
-240 m DEM**, not from the native 80 m LOLA DEM averaged after-the-fact.
-Computing slope on the high-res DEM and then averaging slope-degrees
-double-smooths and biases towards lower values; computing slope on the
-target-resolution DEM keeps the result self-consistent with the rest of
-the analysis grid.
+**Planned upgrade — TOPSIS.** A weighted linear sum lets a strong score on one criterion mask a near-disqualifying score on another (e.g. excellent illumination next to an active scarp). TOPSIS ranks each cell by its Euclidean distance to a synthetic "ideal" and "anti-ideal" point in criterion-score space, which penalises lop-sided profiles. It is on the roadmap as an alternate aggregator behind a `--method topsis` flag.
 
-## Scoring methodology
+## Validation
 
-Each criterion produces a [0, 1] score grid, where 1 is best and 0 is unusable.
-Three normalisation primitives in [`scoring/normalize.py`](src/selene_base/scoring/normalize.py)
-cover every criterion. The aggregate
-[`scoring/aggregate.py`](src/selene_base/scoring/aggregate.py) tolerates
-missing criteria: weights for criteria that aren't yet implemented are
-silently dropped (with a warning) and the remaining weights are
-renormalised to sum to 1, so weeks 2 and 3 can ship a partial pipeline
-without rebalancing the weights file.
+`selene validate` compares the top-N ranked sites (from `data/outputs/top_sites.geojson`) against the disk-approximation polygons of NASA's nine announced Artemis III candidate regions in [`src/selene_base/validation/nasa_regions.py`](src/selene_base/validation/nasa_regions.py). Centroids are public information from NASA's October 2024 Artemis III site-selection announcement; we approximate each region as a 15 km disk around its centroid because NASA's actual polygons are not openly published in machine-readable form. **The disks are not authoritative geometry** — they're a defensible proximity proxy for this comparison.
 
-**Slope** (lower is better, hard cutoff at 15°):
+Two metrics for each top site:
 
-$$ s_\text{slope}(x) = \max\!\left(0,\; 1 - \frac{x}{\theta_\text{max}}\right),\quad \theta_\text{max} = 15° $$
+1. **Inside any region** — does the site fall inside any of the nine 15 km disks?
+2. **Within X km of any centroid** — distance from the site to the nearest NASA centroid.
 
-Slope itself is computed via `numpy.gradient` with explicit metric
-spacing (Zevenbergen & Thorne 1987 convention), which is the most common
-choice in planetary GIS and gives values within ~5% of the Sobel-weighted
-Horn (1981) kernel on smooth surfaces. Edge pixels and any cell whose
-3×3 stencil touched a NaN are explicitly NaN.
+And two for each NASA region:
 
-**Illumination** (linear up to a target, flat past it):
+1. **Distance to nearest top-N site** — how far away is the closest selene-base candidate?
+2. **Contains a top-N site** — is at least one selene-base candidate inside this region's disk?
 
-$$ s_\text{illum}(x) = \min\!\left(\frac{x}{x_\text{target}},\; 1\right),\quad x_\text{target} = 0.70 $$
+### Per-region results (today)
 
-Diminishing returns past 70%: power and thermal systems are sized for
-the worst-case duty cycle anyway.
+![Distance from each NASA Artemis III candidate to the nearest selene-base top site](docs/img/validation_table.png)
 
-**Thermal** (Gaussian on mean × linear penalty on range):
+| NASA candidate | nearest site | distance (km) | inside region? |
+| --- | --- | ---: | --- |
+| Cabeus B | site_16 | 157.3 | no |
+| Haworth | site_08 | 52.1 | no |
+| Malapert Massif | site_08 | 65.4 | no |
+| Mons Mouton | site_16 | 98.6 | no |
+| Mons Mouton Plateau | site_12 | 79.3 | no |
+| Nobile Rim 1 | site_18 | 64.3 | no |
+| Nobile Rim 2 | site_18 | 79.8 | no |
+| de Gerlache Rim 2 | site_17 | 27.8 | no |
+| Slater Plain | site_12 | 25.8 | no |
 
-$$ s_\text{therm}(T_\text{max}, T_\text{min}) = \exp\!\left(-\frac{(\bar{T} - T^\star)^2}{2\sigma^2}\right) \cdot \max\!\left(0,\; 1 - \frac{T_\text{max} - T_\text{min}}{\Delta_\text{max}}\right) $$
+The honest read: with three of six criteria active and the operationally-dominant two (water-ice proximity, thermal stability) absent, selene-base ranks far-side and inter-crater plains highly because they're flat, low-crater-density, and well-illuminated, but they are not where NASA wants to land. The pipeline behaves correctly given the inputs it has; the result is informative about the limits of partial-criterion analysis. As Diviner / LEND / Watters land, this table updates.
 
-with $\bar{T} = (T_\text{max}+T_\text{min})/2$, $T^\star = 180$ K,
-$\sigma = 50$ K, $\Delta_\text{max} = 200$ K. Penalises both
-swing-into-cryo-shadow regimes and far-from-mild-mean regimes.
-
-**Ice** (inverse of normalised neutron flux, plus a near-PSR bonus):
-
-$$ s_\text{ice}(\phi, \mathcal{P}) = \mathrm{clip}\!\left(\bigl(1 - \mathrm{minmax}(\phi)\bigr) + b \cdot \mathbb{1}\bigl[d(p, \mathcal{P}) \le R\bigr],\; 0,\; 1\right) $$
-
-where $\phi$ is the LEND epithermal-neutron flux, $\mathcal{P}$ is the
-permanently-shadowed-region mask (derived from illumination by
-`derive_psr_mask`), $R = 5$ km, $b = 0.3$.
-
-**Hazard** (linear penalty on local crater density):
-
-$$ s_\text{haz}(d) = \mathrm{clip}\!\left(1 - \frac{d}{d_\text{sat}},\; 0,\; 1\right),\quad d_\text{sat} = 50 $$
-
-with $d$ the count of catalogued craters within 3 km of the pixel
-(KDTree query on the Robbins catalog reprojected into the analysis
-grid's CRS).
-
-**Seismic** (linear ramp on distance to nearest active scarp):
-
-$$ s_\text{seis}(\delta) = \mathrm{clip}\!\left(\frac{\delta}{\delta_\text{safe}},\; 0,\; 1\right),\quad \delta_\text{safe} = 50\,\mathrm{km} $$
-
-with $\delta$ the distance (km) from each pixel to the nearest scarp
-feature in the Watters catalog (KDTree on densified scarp vertices).
-
-The aggregate is
-
-$$ S(p) = \sum_{c \in \mathcal{C}} \frac{w_c}{\sum_{c'\in\mathcal{C}} w_{c'}} \cdot s_c(p), $$
-
-where $\mathcal{C}$ is the subset of criteria whose score grid is on
-disk at score-time. Renormalising over $\mathcal{C}$ — rather than the
-full configured weight set — lets weeks 2 and 3 ship a partial pipeline
-without rebalancing the weights file.
-
-### Current results (real data)
-
-Run with the three criteria that have working source data — slope,
-illumination, hazard — and renormalised weights ($\frac{0.15}{0.55}$,
-$\frac{0.30}{0.55}$, $\frac{0.10}{0.55}$):
-
-- **Aggregate:** 6.4 M finite cells, score min/mean/max
-  $0.145 / 0.537 / 0.971$, with 12.4 % above 0.7.
-- **Top-20 sites** (NMS, 25 km min separation, score floor 0.5) all
-  cluster at lat $-79.8\,°$ to $-89.3\,°$ across the full longitude
-  range; top score 0.971 at $(-86.04\,°,\, -176.78\,°)$. The full
-  ranked list (with per-criterion sub-scores) lives at
-  [`data/outputs/top_sites.geojson`](data/outputs/top_sites.geojson)
-  after `selene rank`.
-
-Numbers will shift once Diviner, LEND, and the scarp catalog land —
-their weights currently get redistributed across the present three.
-
-**Illumination** (linear in average sunlit fraction):
-
-$$ s_\text{illum}(x) = \mathrm{clip}\!\left(\frac{x - x_\text{lo}}{x_\text{hi} - x_\text{lo}},\; 0,\; 1\right) $$
-
-**Thermal** (Gaussian peak at a moderate target temperature):
-
-$$ s_\text{therm}(x) = \exp\!\left(-\frac{(x - T^\star)^2}{2\sigma^2}\right),\quad T^\star \approx 230\,\mathrm{K} $$
-
-**Ice / hydrogen** (linear in inferred water-equivalent wt%):
-
-$$ s_\text{ice}(x) = \mathrm{clip}\!\left(\frac{x}{x_\text{ref}},\; 0,\; 1\right) $$
-
-**Hazard** (distance from craters with $D \ge D_\text{min}$):
-
-$$ s_\text{haz}(p) = \mathrm{clip}\!\left(\frac{d(p,\,\text{craters})}{r_\text{eject}},\; 0,\; 1\right) $$
-
-**Seismic** (distance from active lobate scarps):
-
-$$ s_\text{seis}(p) = \mathrm{clip}\!\left(\frac{d(p,\,\text{scarps})}{d_\text{safe}},\; 0,\; 1\right),\quad d_\text{safe} \approx 50\,\mathrm{km} $$
-
-The aggregate suitability is a weighted linear sum:
-
-$$ S(p) = \sum_{c} w_c \cdot s_c(p),\qquad \sum_c w_c = 1 $$
-
-Default weights from [`config/weights_default.yaml`](config/weights_default.yaml):
-
-| Criterion | Weight |
-| --- | ---: |
-| illumination | 0.30 |
-| ice | 0.25 |
-| slope | 0.15 |
-| thermal | 0.10 |
-| hazard | 0.10 |
-| seismic | 0.10 |
-
-**Planned upgrade — TOPSIS.** A weighted linear sum lets a strong score on one
-criterion mask a near-disqualifying score on another (e.g. excellent illumination
-right next to an active scarp). TOPSIS — Technique for Order of Preference by
-Similarity to Ideal Solution — ranks each cell by its Euclidean distance to a
-synthetic "ideal" and "anti-ideal" point in criterion-score space, which
-penalises lop-sided profiles. It is on the roadmap as an alternate aggregator
-that callers can opt into via `--method topsis`.
-
-## Validation plan
-
-Top-ranked sites are compared against NASA's nine announced Artemis III candidate
-regions: Cabeus B, Haworth, Malapert Massif, Mons Mouton, Mons Mouton Plateau,
-Nobile Rim 1, Nobile Rim 2, de Gerlache Rim 2, and Slater Plain. Two metrics:
-
-1. **Coverage** — fraction of the nine NASA candidates that fall within
-   `min_distance_km` of any top-N selene-base site.
-2. **Per-region rank** — for each NASA candidate, the rank of the closest
-   selene-base site.
-
-Results table (filled in week 4):
-
-| NASA candidate | Closest selene-base rank | Distance (km) | Aggregate score |
-| --- | ---: | ---: | ---: |
-| Cabeus B | \<results pending\> | \<results pending\> | \<results pending\> |
-| Haworth | \<results pending\> | \<results pending\> | \<results pending\> |
-| Malapert Massif | \<results pending\> | \<results pending\> | \<results pending\> |
-| Mons Mouton | \<results pending\> | \<results pending\> | \<results pending\> |
-| Mons Mouton Plateau | \<results pending\> | \<results pending\> | \<results pending\> |
-| Nobile Rim 1 | \<results pending\> | \<results pending\> | \<results pending\> |
-| Nobile Rim 2 | \<results pending\> | \<results pending\> | \<results pending\> |
-| de Gerlache Rim 2 | \<results pending\> | \<results pending\> | \<results pending\> |
-| Slater Plain | \<results pending\> | \<results pending\> | \<results pending\> |
-
-A high-coverage outcome would be evidence that the chosen criteria and weights
-are at least *consistent* with NASA's site-selection process; sensitivity sweeps
-over the weights file are planned to characterise how robust the agreement is.
-
-## Project structure
+## Architecture
 
 ```
 selene-base/
-├── README.md
-├── pyproject.toml
-├── LICENSE
-├── .python-version
-├── .gitignore
-├── config/
-│   ├── region_southpole.yaml
-│   └── weights_default.yaml
-├── data/
-│   ├── raw/         (gitignored — populated by `selene download`)
-│   ├── processed/   (gitignored — populated by `selene preprocess`)
-│   └── outputs/     (gitignored — populated by `selene viz`)
 ├── src/selene_base/
-│   ├── cli.py
-│   ├── data/        (download, load, reproject)
-│   ├── criteria/    (slope, illumination, thermal, ice, hazard, seismic)
-│   ├── scoring/     (normalize, aggregate, ranking)
-│   └── viz/         (webmap, site_report)
-├── notebooks/
-├── tests/
+│   ├── data/                # download + load + reproject + rasterize
+│   ├── criteria/            # six [0,1] scoring functions
+│   ├── scoring/             # normalize, aggregate (renormalising), ranking (NMS)
+│   ├── validation/          # NASA candidate regions + proximity_analysis
+│   ├── viz/                 # folium webmap + per-site HTML reports
+│   ├── pipeline/            # one orchestrator module per CLI subcommand
+│   └── cli.py               # typer CLI: download, preprocess, score, rank, validate, viz
+├── config/                  # region_southpole.yaml, weights_default.yaml
+├── data/                    # raw/ processed/ outputs/ (all gitignored)
+├── notebooks/               # jupytext .py scripts; one per week
+├── tests/                   # synthetic-data unit tests + skipif-guarded data tests
 └── .github/workflows/ci.yml
 ```
 
+The dependency graph is one-way: `data/` is the foundation; `criteria/` reads loaded rasters; `scoring/` aggregates criterion outputs; `validation/` and `viz/` consume scoring outputs; `pipeline/` orchestrates; `cli.py` exposes the orchestrators. Tests follow the same layering.
+
+206 tests, ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without 200 MB of cached LRO data.
+
 ## Roadmap
 
-A four-week plan, with each module's docstring tagged to its target week.
-
-- **Week 1 — data ingestion.** ✅ `data.download.*`, `data.load.*`, and
-  the typer `selene download` driver are wired and idempotent. Robbins,
-  LOLA, Mazarico illumination download cleanly; Diviner / LEND / scarps
-  URLs remain TODO-flagged.
-- **Week 2 — common grid + first criterion.** ✅
-  `data.reproject.reproject_to_grid`, COG cache, and the slope criterion
-  ship; `selene preprocess` runs on real data and writes 240 m COGs.
-- **Week 3 — full scoring + ranking.** ✅ All six criteria implemented;
-  three (slope, illumination, hazard) run on real data and three skip
-  cleanly when their source data is absent. Non-maximum suppression
-  ranks the top sites; `selene score` and `selene rank` are end-to-end.
-- **Week 4 — visualisation + validation.** *(in progress)* Implement
-  `viz.webmap.build_webmap` and `viz.site_report.render_site_report`,
-  run the NASA Artemis III candidate comparison, fill in the results
-  table, and freeze v0.1.
+- **Week 1 — data acquisition.** ✅ `selene download` for Robbins, LOLA, Mazarico illumination; Diviner / LEND / scarps URLs flagged.
+- **Week 2 — common grid + slope criterion.** ✅ `reproject_to_grid`, COG cache, slope criterion end-to-end on real data.
+- **Week 3 — full scoring + ranking.** ✅ All six criteria (3 on real data, 3 skip cleanly), KDTree crater density, NMS top-N extraction.
+- **Week 4 — validation + visualisation.** ✅ NASA Artemis III proximity comparison, interactive folium web map, per-site HTML reports, validated v0.1.
+- **Future work.**
+  - Resolve TODO-flagged URLs (Diviner Tbol max/min, LEND CSETN south-polar map, Watters scarp catalog) and rerun the validation against the now-six-criterion top-N.
+  - Sensitivity analysis: sweep the weight vector and report top-N stability.
+  - TOPSIS aggregator behind `--method topsis`.
+  - ML-based criterion inputs (planned in a separate project, [`selene-vision`](https://github.com/Alex0420W/selene-vision)): NAC-imagery-based crater detection, ShadowCam PSR segmentation, illumination surrogate models.
 
 ## References
 
-- Robbins, S. J. (2019). *A new global database of lunar impact craters >1–2 km:
-  1. Crater locations and sizes, comparisons with published databases, and global
-  analysis.* Journal of Geophysical Research: Planets, 124, 871–892.
-- Mazarico, E., Neumann, G. A., Smith, D. E., Zuber, M. T., & Torrence, M. H.
-  (2011). *Illumination conditions of the lunar polar regions using LOLA
-  topography.* Icarus, 211(2), 1066–1081.
-- Watters, T. R., Robinson, M. S., Banks, M. E., Tran, T., & Denevi, B. W.
-  (2015). *Global thrust faulting on the Moon and the influence of tidal
-  stresses.* (Watters lobate-scarp catalog used here.)
-- Civilini, F., Weber, R. C., Jiang, Z., Phillips, D., & Pan, W. (2023).
-  *Constraints on the seismic hazard of young thrust faults on the Moon from
-  re-located shallow moonquakes.* (Used for the seismic exclusion criterion.)
-- NASA (2022). *Artemis III candidate landing regions* — public press materials
-  identifying the nine candidate regions used for validation.
+- Robbins, S. J. (2019). *A new global database of lunar impact craters >1–2 km: 1. Crater locations and sizes, comparisons with published databases, and global analysis.* Journal of Geophysical Research: Planets, 124, 871–892. [doi:10.1029/2018JE005592](https://doi.org/10.1029/2018JE005592)
+- Mazarico, E., Neumann, G. A., Smith, D. E., Zuber, M. T., & Torrence, M. H. (2011). *Illumination conditions of the lunar polar regions using LOLA topography.* Icarus, 211(2), 1066–1081. [doi:10.1016/j.icarus.2010.10.030](https://doi.org/10.1016/j.icarus.2010.10.030)
+- Smith, D. E., et al. (2010). *The Lunar Orbiter Laser Altimeter investigation on the Lunar Reconnaissance Orbiter mission.* Space Science Reviews, 150(1–4), 209–241. [doi:10.1007/s11214-009-9512-y](https://doi.org/10.1007/s11214-009-9512-y)
+- Paige, D. A., et al. (2010). *The Lunar Reconnaissance Orbiter Diviner Lunar Radiometer Experiment.* Space Science Reviews, 150(1–4), 125–160. [doi:10.1007/s11214-009-9529-2](https://doi.org/10.1007/s11214-009-9529-2)
+- Mitrofanov, I. G., et al. (2010). *Hydrogen mapping of the lunar south pole using the LRO Neutron Detector Experiment LEND.* Science, 330(6003), 483–486.
+- Watters, T. R., Robinson, M. S., Banks, M. E., Tran, T., & Denevi, B. W. (2015). *Global thrust faulting on the Moon and the influence of tidal stresses.* Geology, 43(10), 851–854. [doi:10.1130/G37120.1](https://doi.org/10.1130/G37120.1)
+- Civilini, F., Weber, R. C., Jiang, Z., Phillips, D., & Pan, W. (2023). *Constraints on the seismic hazard of young thrust faults on the Moon from re-located shallow moonquakes.* (Used as motivation for the seismic exclusion criterion.)
+- NASA (October 2024). *Artemis III candidate landing regions.* [https://www.nasa.gov/feature/artemis-iii](https://www.nasa.gov/feature/artemis-iii)
+
+## Notes for the reader
+
+The interactive web map (`data/outputs/webmap.html` after `selene viz`) is built with folium / Leaflet and pulls Leaflet's JS and CSS from a CDN — so it needs an internet connection on first open. Everything else (the score raster, polygons, popups, per-site reports) is inlined and works offline. Per-site HTML reports under `data/outputs/sites/` are fully self-contained.
 
 ## License
 

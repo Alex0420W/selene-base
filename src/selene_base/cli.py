@@ -17,6 +17,8 @@ from selene_base.data import download as _download
 from selene_base.pipeline import preprocess as _preprocess
 from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import score as _score
+from selene_base.pipeline import validate as _validate
+from selene_base.pipeline import viz as _viz_pipeline
 
 app = typer.Typer(
     name="selene",
@@ -192,14 +194,66 @@ def rank(
 
 
 @app.command()
-def viz() -> None:
-    """Generate the folium web map and per-site HTML reports.
+def viz(
+    score_map: Path | None = typer.Option(
+        None,
+        "--score-map",
+        help="Aggregate score COG. Defaults to <outputs-dir>/score_southpole.tif.",
+        dir_okay=False,
+    ),
+    sites_path: Path | None = typer.Option(
+        None,
+        "--sites",
+        help="Top sites GeoJSON. Defaults to <outputs-dir>/top_sites.geojson.",
+        dir_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write webmap.html and per-site reports into.",
+        file_okay=False,
+    ),
+    skip_reports: bool = typer.Option(
+        False,
+        "--skip-reports",
+        help="Build only the web map, skip per-site HTML reports.",
+    ),
+) -> None:
+    """Generate the folium web map and per-site HTML reports."""
+    _viz_pipeline.run(
+        score_map_path=score_map,
+        sites_path=sites_path,
+        outputs_dir=outputs_dir,
+        skip_reports=skip_reports,
+    )
 
-    Writes ``data/outputs/webmap.html`` plus one report per ranked site.
 
-    Filled in week 4.
-    """
-    raise NotImplementedError("filled in week 4")
+@app.command()
+def validate(
+    sites_path: Path | None = typer.Option(
+        None,
+        "--sites",
+        help="Top sites GeoJSON. Defaults to <outputs-dir>/top_sites.geojson.",
+        dir_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory to write validation.json into.",
+        file_okay=False,
+    ),
+    near_km: float = typer.Option(
+        25.0,
+        "--near-km",
+        help="Distance threshold (km) for the 'within X km of any centroid' metric.",
+    ),
+) -> None:
+    """Compare ranked sites against NASA's Artemis III candidate regions."""
+    _validate.run(
+        sites_path=sites_path,
+        outputs_dir=outputs_dir,
+        near_km=near_km,
+    )
 
 
 if __name__ == "__main__":
