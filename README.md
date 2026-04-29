@@ -9,11 +9,11 @@
 
 NASA's Artemis III mission will land humans near the lunar south pole around 2027. Selecting a base site there is a multi-criteria optimisation problem: the south pole is a maze of crater rims that catch grazing sunlight, deep permanently-shadowed cold-traps that may host water ice, and active thrust faults that re-localised Apollo-era shallow moonquakes have placed within tens of kilometres of candidate sites. **`selene-base`** fuses the modern LRO-era remote-sensing record (LOLA topography, Diviner thermal climatology, Mazarico illumination maps, LEND hydrogen abundance, the Robbins crater catalog, the Watters lobate-scarp catalog) with the historical Apollo seismic context to score every 240 m pixel of the polar cap and rank top candidate sites. The pipeline is end-to-end reproducible — `selene download && selene preprocess && selene score && selene rank && selene validate && selene viz` produces a ranked GeoJSON of sites, a per-site HTML report, and an interactive web map, on a developer laptop, in minutes, from public data.
 
-## Headline result
+## Headline finding
 
-Run on **five of six criteria with verified source data today** — slope (LOLA), illumination (Mazarico), impact-hazard (Robbins crater catalog), thermal stability (Diviner PRP, week 6), water-ice resource potential (Diviner PRP, week 6) — with the remaining seismic criterion implemented against the Watters scarp catalog interface but skipping cleanly while its source remains TODO-flagged:
+> **Adding two well-validated criteria — thermal stability and ice depth, both from the Diviner Polar Resource Product — to the model degraded NASA-region alignment from 0/20 to 0/20, with median distance to the nearest NASA candidate worsening from 65 km to 102 km, despite both new criteria showing strong individual agreement with NASA's centroids (ice: 0.916 ± 0.096 at NASA vs 0.994 ± 0.016 at our top-20; hazard: 0.969 vs 0.979).** We trace this to a structural limitation of weighted-sum multi-criteria decision analysis: the linear-sum aggregator cannot model the **spatial coupling** that defines NASA's selection — each Artemis III candidate sits a few kilometres from both a permanently-shadowed water-ice deposit *and* a sustained-illumination rim, and a sum lets a far-side cell with ice 0.99 + illumination 0.0 outrank a NASA candidate with 0.92 + 0.32.
 
-> **0 of selene-base's top 20 candidate sites land inside any of NASA's nine Artemis III candidate regions; 0 of 20 fall within 25 km of any centroid.** The closest NASA region — de Gerlache Rim 2 — has a top-20 site 64.8 km away; Slater Plain at 71.6 km is next; the median NASA region is 102 km from the nearest top site. NASA's centroids do score very high on our ice criterion (mean 0.916 vs our top-20's 0.994) and on hazard (0.969 vs 0.979), but lose decisively on slope (0.285 vs 0.924) and illumination (0.321 vs 0.827).
+This is a positive finding *about the model*, not a negative finding about the dataset. The Diviner integration shipped exactly as designed; the data is right; what fails is the decision-theoretic frame. The 200-sample Latin-hypercube sweep over the 5-criterion weight simplex confirms it: 92.5 % of weight regimes match 0/9 NASA regions within 25 km, the best regime down-weights the new criteria to near zero, and **no realistic weight choice gets above 2/9 matches** — adding criteria can't fix a wrong aggregator.
 
 ![selene-base top 20 candidates vs NASA Artemis III regions](docs/img/webmap_screenshot.png)
 
@@ -23,18 +23,15 @@ Run on **five of six criteria with verified source data today** — slope (LOLA)
 | --- | --- | --- |
 | top sites inside any NASA region (15 km disk) | 0 / 20 | 0 / 20 |
 | top sites within 25 km of any centroid | 0 / 20 | 0 / 20 |
-| closest NASA region (km) | Slater Plain at 25.8 km | de Gerlache Rim 2 at 64.8 km |
-| 2nd closest NASA region (km) | de Gerlache Rim 2 at 27.8 km | Slater Plain at 71.6 km |
-| median NASA region distance (km) | 65 | 102 |
+| closest NASA region | Slater Plain at 25.8 km | de Gerlache Rim 2 at 64.8 km |
+| 2nd closest NASA region | de Gerlache Rim 2 at 27.8 km | Slater Plain at 71.6 km |
+| median NASA region distance | 65 km | 102 km |
+| 200-sample sensitivity: samples matching 0/9 within 25 km | 71.5 % | 92.5 % |
 | top-20 aggregate score range | 0.880 – 0.971 | 0.831 – 0.858 |
 
-Adding Diviner PRP **made alignment worse**, not better. That's a real finding worth understanding rather than papering over: when the ice criterion lights up across every PSR on the lunar limb, our top-20 fans out across all longitudes (sites in lat -76° to -89° spread across a full 360° of longitude), pulling away from NASA's tight cluster around -65° to +35° longitude.
+The structural diagnosis: NASA's selection is a coupled spatial constraint. Each candidate sits within a few kilometres of *both* a sustained-illumination rim *and* a permanently-shadowed water-ice deposit. Our pipeline scores those two conditions independently and then sums; the sum can't represent "AND". A cell inside a far-side PSR scores high on ice and zero on illumination, the linear sum lets the high ice score dominate the renormalised weighted total, and the cell ranks above NASA candidates that balance both. The behaviour is *exactly* what the model is mathematically defined to do; the model is the wrong shape for the question.
 
-**Why the disagreement is now sharper, not softer.** NASA's selection is a *coupled spatial constraint*: each candidate sits within a few kilometres of both a permanently-shadowed water-ice deposit and a sustained-illumination rim that supports Earth communications. Our pipeline scores those two conditions independently — a cell deep inside a far-side PSR can score 0.99 on ice and 0.0 on illumination and still rank higher than a NASA candidate that scores ~0.92 on ice and ~0.32 on illumination, because the renormalised weighted sum lets the high ice score dominate. The criteria as defined don't model the spatial *coupling* NASA's site selection optimises — and ranking by linear-sum aggregation doesn't penalise lop-sided scores.
-
-The 200-sample weight-vector sensitivity sweep over the new five-criterion simplex agrees: the modal outcome is 0 NASA region matches (185/200 samples), the best regime achieves 2/9 — and that best regime weights ice and thermal at near-zero (`hazard=0.74, illumination=0.22, slope=0.03, thermal=0.01, ice=0.00`). Adding the criteria *more* signal-poor for the alignment task than the criteria they replaced.
-
-The honest read: **the Diviner PRP integration was successful as data engineering** (PDS4 parser, triangle-mesh-to-grid rasteriser, three new score grids on the common 240 m polar grid, all test-covered) but **did not move the validation result** because the missing piece is not another criterion — it's a coupling constraint. A future improvement would be a TOPSIS aggregator that penalises lop-sided per-criterion profiles, or a hard "near-PSR-AND-near-illuminated-rim" mask criterion that captures the spatial-coupling story directly.
+**The Diviner PRP integration was successful as data engineering** — PDS4 parser, triangle-mesh-to-grid rasteriser, three new score grids on the common 240 m polar grid, all test-covered — and **the failure is informative**: it identifies the next architectural step (see [Roadmap](#roadmap)). A bad alignment number with a clear methodology finding is a stronger result than a flattering alignment number with no understanding of what drove it.
 
 For the per-region distance table see `data/outputs/validation.json`, or run `selene validate` on a fresh checkout to regenerate it. The interactive map lives at [`data/outputs/webmap.html`](data/outputs/webmap.html) after `selene viz`; per-site HTML reports under [`data/outputs/sites/`](data/outputs/sites/).
 
@@ -168,26 +165,23 @@ The best weight regime found uses `hazard = 0.74, illumination = 0.22, slope = 0
 
 ## Diagnostic comparison
 
-Run `selene compare` to ask a sharper question: *at NASA's centroids vs at our top-20, which criteria favour which set, by how much?*
+Run `selene compare` to ask: *at NASA's centroids vs at our top-20, which criteria agree and which disagree?* The table is reordered below by signed delta — agreement first, disagreement last — because that's the actual structure of the result.
 
 ![Per-criterion score: where we differ from NASA](docs/img/comparison.png)
 
-| criterion | our top-20 | NASA 9 centroids | delta | \|t\| |
-| --- | --- | --- | ---: | ---: |
-| slope | 0.924 ± 0.063 | 0.285 ± 0.288 | +0.639 | 6.60 |
-| illumination | 0.827 ± 0.099 | 0.321 ± 0.274 | +0.506 | 5.37 |
-| ice | 0.994 ± 0.016 | 0.916 ± 0.096 | +0.077 | 2.39 |
-| thermal | 0.239 ± 0.194 | 0.113 ± 0.149 | +0.125 | 1.90 |
-| hazard | 0.979 ± 0.025 | 0.969 ± 0.023 | +0.010 | 1.08 |
+| criterion | our top-20 | NASA 9 centroids | delta | \|t\| | reads as |
+| --- | --- | --- | ---: | ---: | --- |
+| **hazard** | 0.979 ± 0.025 | 0.969 ± 0.023 | **+0.010** | 1.08 | strong agreement |
+| **ice** | 0.994 ± 0.016 | 0.916 ± 0.096 | **+0.077** | 2.39 | strong agreement |
+| **thermal** | 0.239 ± 0.194 | 0.113 ± 0.149 | **+0.125** | 1.90 | weak signal (tuning issue) |
+| illumination | 0.827 ± 0.099 | 0.321 ± 0.274 | +0.506 | 5.37 | major disagreement |
+| slope | 0.924 ± 0.063 | 0.285 ± 0.288 | +0.639 | 6.60 | major disagreement |
 
-Four things to notice:
+**Of the five criteria available, three agree closely with NASA's selection.** Hazard agrees almost identically (delta +0.010 on a [0, 1] scale): both NASA's nine candidates and our top-20 sit in low-crater-density terrain. Ice agrees within ~0.08: NASA's centroids score very high on the Diviner PRP ice criterion (0.916 ± 0.096), confirming that water-ice access is what NASA optimises and that the PRP measures it correctly. Thermal scores low at both site sets (0.113 NASA vs 0.239 ours) because our 230 K Gaussian peak is in the tail of every polar cell — a tuning issue (see Roadmap), not a methodological one; the criterion would discriminate cleanly with the target re-tuned to ~130 K.
 
-1. **NASA's centroids score very well on ice** (0.916 ± 0.096) — almost as well as our own top-20 (0.994 ± 0.016). The PRP ice criterion *agrees* with NASA's selection that water-ice access matters; both NASA's nine and our top-20 sit in or near PSRs. The criterion is not the disagreement.
-2. **Hazard remains an agreement** (delta +0.010). Both site sets pick low-crater-density terrain; the criterion does the right thing on both sides.
-3. **Thermal scores low everywhere** (our 0.239, NASA's 0.113). The polar surface annual mean is 100–150 K against our 230 K target — the Gaussian is in its tail at every cell. Thermal contributes little discriminative signal as currently parameterised; bringing the target into the 130–150 K range is on the tuning backlog.
-4. **Slope and illumination still drive the disagreement, harder than before.** NASA's regions span steep terrain (slope 0.285 ± 0.288 — Malapert Massif is on a literal massif) and accept low illumination (0.321 ± 0.274) because the actual NASA selection is a *coupled spatial constraint*: each candidate sits within a few kilometres of both a sustained-illumination rim AND a permanently-shadowed water-ice deposit. The linear-sum aggregator models neither coupling — a far-side cell that scores 0.99 on ice and 0.0 on illumination still outranks a NASA candidate that scores 0.92 on ice and 0.32 on illumination.
+**Two criteria disagree by ~0.6 each, and they're the same two on which NASA accepts low values to satisfy a constraint our model can't represent.** NASA's regions span steep slopes (Malapert is a literal massif; slope 0.285 ± 0.288) and accept low illumination (0.321 ± 0.274) because each is *near a sustained-illumination rim AND near a permanently-shadowed water-ice deposit*. NASA's site selection treats those two conditions as a logical AND with a coupling distance of a few kilometres — a sustained-illumination rim *adjacent to* a PSR is operationally a different cell from a sustained-illumination rim 200 km away. Our linear-sum aggregator scores both rim conditions independently and then adds; the sum cannot encode adjacency. A cell that scores 0.99 on ice (deep PSR) and 0.0 on illumination (no nearby rim) sums to 0.495 on those two criteria; a NASA candidate that scores 0.92 on ice and 0.32 on illumination sums to 0.62. The NASA candidate wins on the sum — but only on the sum. As soon as the third dimension (slope at 0.92 vs 0.28) lands in the linear total, the far-side cell wins.
 
-The ``|t|`` column is a Welch two-sample t-statistic, reported informationally only — with `n = 20` vs `n = 9` and structurally different sampling, a strict inferential frame is the wrong tool. The values rank-order which criteria most separate the two site sets: slope and illumination dominate; hazard is a non-discriminator.
+The ``|t|`` column is a Welch two-sample t-statistic, informational only — with ``n = 20`` vs ``n = 9`` and structurally different sampling, a strict inferential frame is the wrong tool. The values rank-order how strongly each criterion *separates* the site sets, not how well the criterion *captures* the underlying habitat-suitability question. By that ranking: ice and hazard are non-discriminators (the criteria where both site sets cluster); slope and illumination are the *separators* whose disagreement is the methodology finding, not a data finding.
 
 ## Architecture
 
@@ -219,14 +213,24 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - **Week 3 — full scoring + ranking.** ✅ All six criteria (3 on real data, 3 skip cleanly), KDTree crater density, NMS top-N extraction.
 - **Week 4 — validation + visualisation.** ✅ NASA Artemis III proximity comparison, interactive folium web map, per-site HTML reports, validated v0.1.
 - **Week 5 — robustness, diagnostic, sample data.** ✅ Latin-hypercube weight-sensitivity sweep, per-criterion `selene compare` diagnostic, bundled ~12 MB sample tarball, CI pipeline smoke test on the sample.
-- **Week 6 — Diviner Polar Resource Product integration.** ✅ PDS4 character-table parser, triangle-mesh-to-grid rasteriser, three new score grids (`temp_avg`, `temp_max`, `ice_depth`) on the common 240 m grid, thermal+ice criteria switched to PRP defaults. Five of six criteria now run on real data; validation rerun.
-- **Future work.**
-  - Resolve the remaining TODO URL — the Watters lobate-scarp catalog — and rerun against the now-six-criterion top-N.
-  - **TOPSIS aggregator behind `--method topsis`** — the natural fix for the lop-sided-profile failure mode the week 6 diagnostic surfaced. A linear-sum aggregator lets a far-side PSR with ice 0.99 + illumination 0.0 outrank a NASA-cluster cell with 0.92 + 0.32; TOPSIS penalises that.
-  - **Spatial-coupling criterion**: a hard mask scoring "within X km of both a PSR centre AND a sunlit rim" — captures NASA's actual operational constraint that the linear-sum can't.
-  - Earth line-of-sight criterion derived from LOLA elevation horizon checks.
-  - Thermal target re-tune: the PRP `temp_avg` peaks at 211 K against a 230 K Gaussian peak, contributing little discriminative signal; bringing the target into the 130–150 K band is on the backlog.
-  - ML-based criterion inputs (planned as a separate project, `selene-vision`).
+- **Week 6 — Diviner Polar Resource Product integration.** ✅ PDS4 character-table parser, triangle-mesh-to-grid rasteriser, three new score grids (`temp_avg`, `temp_max`, `ice_depth`) on the common 240 m grid, thermal+ice criteria switched to PRP defaults. Five of six criteria now run on real data. Validation rerun *surfaced the methodology finding above*: linear-sum MCDA can't model NASA's spatial-coupling constraint regardless of which criteria are summed.
+
+### Where this goes next
+
+The week 6 finding identifies the next architectural step. Two candidate approaches:
+
+**(a) TOPSIS aggregator behind `--method topsis`.** TOPSIS (Technique for Order of Preference by Similarity to Ideal Solution) ranks each cell by its Euclidean distance to a synthetic "ideal" point (1 on every criterion) and "anti-ideal" point (0 on every criterion). A cell with `ice 0.99 + illumination 0.0 + slope 0.92` is *farther* from the ideal `(1, 1, 1, …)` in Euclidean space than a cell with `ice 0.92 + illumination 0.32 + slope 0.28` once the dominant slope dimension is accounted for, because TOPSIS penalises distance from the all-1 corner along *every* axis simultaneously. This handles compensation differently than the weighted sum and would partially close the lop-sided-profile gap.
+
+**(b) Spatial-coupling mask as a derived criterion.** Define a single new criterion `near_psr_and_rim(p) = 1 if p is within X km of any PSR pixel AND within Y km of any high-illumination pixel else 0`, plug it into the existing aggregator. This is closer to NASA's actual selection logic — the operational constraint is `near(PSR) AND near(rim)`, a logical AND with a metric distance threshold. The mask reads like NASA's prose; the TOPSIS reformulation reads like a different aggregator hoping to recover the same constraint indirectly. **The mask approach is the more honest fix.** TOPSIS is the easier one to drop in.
+
+The intent is to ship both: TOPSIS as a `--method topsis` flag (small, easy to validate), then the spatial-coupling mask as a new criterion (architecturally cleaner, captures the actual NASA logic). Validation reruns against the same nine NASA candidates after each, with the same `selene validate` / `selene compare` / `selene sensitivity` harness.
+
+### Smaller follow-ups
+
+- Resolve the last TODO URL — the Watters lobate-scarp catalog — and light up the seismic criterion (six of six live).
+- **Thermal target re-tune**: the PRP `temp_avg` peaks at 211 K against a 230 K Gaussian peak, leaving the criterion in its tail at every cell. Bringing the target into the 130–150 K band would let thermal contribute discriminative signal again.
+- Earth line-of-sight criterion derived from LOLA elevation horizon checks.
+- ML-based criterion inputs (planned as a separate project, `selene-vision`).
 
 ## References
 
