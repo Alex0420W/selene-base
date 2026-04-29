@@ -189,12 +189,11 @@ def _thermal_score(
     echo: Callable[[str], None],
     raw_dir: Path,
 ) -> Path | None:
-    tmax_cog = processed_dir / "diviner_tmax_southpole_240m.tif"
-    tmin_cog = processed_dir / "diviner_tmin_southpole_240m.tif"
-    if not (tmax_cog.exists() and tmin_cog.exists()):
+    temp_avg_cog = processed_dir / "diviner_temp_avg_southpole_240m.tif"
+    if not temp_avg_cog.exists():
         echo(
-            "[skip] thermal: Diviner Tmax/Tmin COGs not present "
-            "(source data download is TODO-flagged)"
+            "[skip] thermal: Diviner PRP temp_avg COG not present; "
+            "run `selene download diviner` then `selene preprocess`"
         )
         return None
 
@@ -204,8 +203,8 @@ def _thermal_score(
         echo(f"[skip] thermal: {out_cog.name} already cached")
         return out_cog
 
-    echo("[compute] thermal from Diviner Tmax/Tmin")
-    score = thermal_criterion.compute(_open_cog(tmax_cog), _open_cog(tmin_cog))
+    echo("[compute] thermal from Diviner PRP temp_avg")
+    score = thermal_criterion.compute(_open_cog(temp_avg_cog))
     out_path = cache_processed(score, "thermal_score", scored_dir, overwrite=overwrite)
     echo(f"[done] thermal -> {out_path}")
     return out_path
@@ -219,9 +218,12 @@ def _ice_score(
     echo: Callable[[str], None],
     raw_dir: Path,
 ) -> Path | None:
-    lend_cog = processed_dir / "lend_southpole_240m.tif"
-    if not lend_cog.exists():
-        echo("[skip] ice: LEND COG not present (source data download is TODO-flagged)")
+    ice_depth_cog = processed_dir / "diviner_ice_depth_southpole_240m.tif"
+    if not ice_depth_cog.exists():
+        echo(
+            "[skip] ice: Diviner PRP ice_depth COG not present; "
+            "run `selene download diviner` then `selene preprocess`"
+        )
         return None
 
     scored_dir = processed_dir / SCORED_SUBDIR
@@ -230,14 +232,14 @@ def _ice_score(
         echo(f"[skip] ice: {out_cog.name} already cached")
         return out_cog
 
-    echo(f"[compute] ice from {lend_cog.name}")
-    flux = _open_cog(lend_cog)
+    echo(f"[compute] ice from {ice_depth_cog.name}")
+    ice_depth = _open_cog(ice_depth_cog)
     psr_mask: xr.DataArray | None = None
     illum_cog = processed_dir / "illumination_southpole_240m.tif"
     if illum_cog.exists():
         echo("           (using PSR mask derived from illumination)")
         psr_mask = ice_criterion.derive_psr_mask(_open_cog(illum_cog))
-    score = ice_criterion.compute(flux, psr_mask=psr_mask, pixel_size_m=pixel_size_m)
+    score = ice_criterion.compute(ice_depth, psr_mask=psr_mask, pixel_size_m=pixel_size_m)
     out_path = cache_processed(score, "ice_score", scored_dir, overwrite=overwrite)
     echo(f"[done] ice -> {out_path}")
     return out_path

@@ -74,22 +74,9 @@ def load_lola_ldem(path: Path = DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.lbl") -
     return (da * 0.5).rio.write_crs(da.rio.crs, inplace=False).rename("elevation_m")
 
 
-def load_diviner(
-    path_max: Path = DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_max_sp.tif",
-    path_min: Path = DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_min_sp.tif",
-) -> xr.Dataset:
-    """Load Diviner annual Tbol max/min as a two-variable Dataset.
-
-    Args:
-        path_max: GeoTIFF of annual maximum bolometric temperature (K).
-        path_min: GeoTIFF of annual minimum bolometric temperature (K).
-
-    Returns:
-        Dataset with variables ``tbol_max`` and ``tbol_min``, each in K.
-    """
-    tmax = load_raster(path_max).rename("tbol_max")
-    tmin = load_raster(path_min).rename("tbol_min")
-    return xr.Dataset({"tbol_max": tmax, "tbol_min": tmin})
+# Diviner data is loaded via :func:`selene_base.data.diviner_prp.load_diviner_prp`
+# from the PDS4 Polar Resource Product since week 6. The earlier two-GeoTIFF
+# loader (``load_diviner``) was retired with the data shape change.
 
 
 _ILLUMINATION_SCALE = 0.00004  # per LBL: AVERAGE_VISIBILITY = DN * 0.00004 (max DN 25000 -> 1.0)

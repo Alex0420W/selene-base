@@ -50,25 +50,19 @@ LOLA_LDEM_IMG_MIN_BYTES = 100_000_000  # ~115 MB
 LOLA_LDEM_LBL_MIN_BYTES = 1_000
 
 # ----------------------------------------------------------------------------
-# 3. Diviner annual Tbol max/min south-polar mosaics.
-# TODO(week1): URL not verified — UCLA hosts these at
-#     http://luna1.diviner.ucla.edu/~jpierre/diviner/level4_polar/
-# but that endpoint failed certificate verification from this environment.
-# Original spec referenced "annual maximum and annual minimum bolometric
-# temperature mosaics for the south pole". The PDS Diviner derived bundle
-# (data_derived_pcp/) ships binned-text PCP products organised by sub-solar
-# longitude, not GeoTIFF mosaics, so the UCLA mirror is the right source.
-# Confirm filenames against the live page before first download.
+# 3. Diviner Polar Resource Product — south pole (verified week 6).
+#    PDS4 Table_Character: 2.88M triangle-mesh records, ~605 MB TAB +
+#    14 KB XML. Provides Tavg, Tmax, modeled ice-stability depth at the
+#    centre of every triangular facet — drives both the thermal and ice
+#    criteria from a single authoritative source.
 # ----------------------------------------------------------------------------
-DIVINER_TMAX_URL = (
-    "http://luna1.diviner.ucla.edu/~jpierre/diviner/level4_polar/"
-    "diviner_tbol_snapshot_max_sp.tif"  # TODO(week1): verify exact filename
+DIVINER_PRP_BASE = (
+    "https://pds-geosciences.wustl.edu/lro/urn-nasa-pds-lro_diviner_derived1/data_derived_prp"
 )
-DIVINER_TMIN_URL = (
-    "http://luna1.diviner.ucla.edu/~jpierre/diviner/level4_polar/"
-    "diviner_tbol_snapshot_min_sp.tif"  # TODO(week1): verify exact filename
-)
-DIVINER_MIN_BYTES = 100_000
+DIVINER_PRP_TAB_URL = f"{DIVINER_PRP_BASE}/dlre_prp_south.tab"
+DIVINER_PRP_XML_URL = f"{DIVINER_PRP_BASE}/dlre_prp_south.xml"
+DIVINER_PRP_TAB_MIN_BYTES = 600_000_000  # ~605 MB
+DIVINER_PRP_XML_MIN_BYTES = 1_000
 
 # ----------------------------------------------------------------------------
 # 4. Mazarico average illumination — south-polar 65S 240m product
@@ -184,31 +178,32 @@ def download_lola(dest: Path = DEFAULT_RAW_DIR / "lola") -> Path:
 
 
 def download_diviner(dest: Path = DEFAULT_RAW_DIR / "diviner") -> Path:
-    """Download Diviner annual Tbol max/min south-polar mosaics.
+    """Download the Diviner Polar Resource Product for the south pole.
 
-    .. note::
-       URLs are TODO-flagged; confirm against
-       ``http://luna1.diviner.ucla.edu/~jpierre/diviner/level4_polar/``
-       before first run.
+    Fetches both ``dlre_prp_south.tab`` (~605 MB) and
+    ``dlre_prp_south.xml`` (~14 KB) from the PDS Geosciences Diviner
+    derived bundle. The PRP is a PDS4 character table indexed by
+    triangular-mesh facet centre; downstream parsing happens in
+    :mod:`selene_base.data.pds4_table`.
 
     Args:
-        dest: Directory to write into.
+        dest: Directory to write into. Created if missing.
 
     Returns:
         Path to the downloaded directory.
     """
     dest = Path(dest)
     stream_to_file(
-        DIVINER_TMAX_URL,
-        dest / "diviner_tbol_max_sp.tif",
-        min_bytes=DIVINER_MIN_BYTES,
-        label="diviner tmax",
+        DIVINER_PRP_XML_URL,
+        dest / "dlre_prp_south.xml",
+        min_bytes=DIVINER_PRP_XML_MIN_BYTES,
+        label="diviner prp xml",
     )
     stream_to_file(
-        DIVINER_TMIN_URL,
-        dest / "diviner_tbol_min_sp.tif",
-        min_bytes=DIVINER_MIN_BYTES,
-        label="diviner tmin",
+        DIVINER_PRP_TAB_URL,
+        dest / "dlre_prp_south.tab",
+        min_bytes=DIVINER_PRP_TAB_MIN_BYTES,
+        label="diviner prp tab",
     )
     return dest
 

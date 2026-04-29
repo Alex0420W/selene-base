@@ -1,15 +1,21 @@
-"""Thermal criterion — rewards moderate, stable surface temperatures.
+"""Thermal criterion — rewards habitat-friendly mean temperatures.
 
-Sites that swing between cryogenic shadow and full sunlight stress
-hardware; the ideal is a stable, mild regime around the
-``target_temp_k`` mean (default 180 K) with a small diurnal range.
-Score factors a Gaussian on mean temperature with a linear penalty on
-the diurnal swing:
+Operates on the Diviner Polar Resource Product's annual-mean surface
+temperature at 2 cm depth (``temp_avg``). The earlier two-input form
+that took ``temp_max`` and ``temp_min`` is gone — the PRP gives Tavg
+and Tmax, not Tmin, and what matters for habitat thermal control is
+the long-term average energy budget the regolith presents to a base
+rather than the day/night swing (which is enormous everywhere).
 
-    score = exp(-(T_mean - target)² / (2σ²))
-            * max(0, 1 - (T_max - T_min) / max_range)
+Score is a Gaussian on the mean:
 
-Filled in week 3.
+    score = exp(-(Tavg - target)^2 / (2 sigma^2))
+
+with default ``target_temp_k = 230`` (~-43 °C, near typical lunar polar
+averages and inside the engineering range for thermal control), and
+``sigma = 50 K``.
+
+Filled in week 3; rewritten week 6 for the PRP single-input signature.
 """
 
 from __future__ import annotations
@@ -20,61 +26,46 @@ import xarray as xr
 
 
 def compute(
-    t_max: xr.DataArray,
-    t_min: xr.DataArray,
+    temp_avg: xr.DataArray,
     *,
-    target_temp_k: float = 180.0,
+    target_temp_k: float = 230.0,
     sigma_k: float = 50.0,
-    max_range_k: float = 200.0,
 ) -> xr.DataArray:
-    """Map Diviner Tmax/Tmin to a [0, 1] thermal-stability score.
+    """Map annual-mean surface temperature to a [0, 1] thermal score.
 
     Args:
-        t_max: DataArray of annual maximum bolometric temperature (K).
-        t_min: DataArray of annual minimum bolometric temperature (K).
-            Must broadcast against ``t_max``.
-        target_temp_k: Mean temperature receiving the maximum mean
-            score. Must be strictly positive.
-        sigma_k: Gaussian width on mean temperature (K). Must be
-            strictly positive.
-        max_range_k: Diurnal range (K) above which the swing penalty
-            saturates the score at zero. Must be strictly positive.
+        temp_avg: DataArray of annual-mean surface temperature (K).
+        target_temp_k: Mean temperature receiving the maximum score.
+            230 K (~-43 °C) is a defensible target — close to typical
+            lunar polar annual means and inside the engineering range
+            for thermal control. Was ``180 K`` in the original
+            week-3 spec when the criterion took Tmin; that value made
+            sense for "instantaneous comfortable temperature" but is
+            wrong for an annual-average input.
+        sigma_k: Gaussian width on the mean temperature, in kelvin.
 
     Returns:
-        DataArray of [0, 1] scores; NaN where either input is NaN.
+        DataArray of [0, 1] scores aligned with ``temp_avg``;
+        NaN where the input is NaN.
 
     Raises:
-        ValueError: If any of ``target_temp_k``, ``sigma_k``,
-            ``max_range_k`` is non-positive, or if shapes mismatch.
+        ValueError: If ``target_temp_k`` or ``sigma_k`` is non-positive.
     """
     if target_temp_k <= 0:
         raise ValueError(f"target_temp_k must be positive, got {target_temp_k!r}")
     if sigma_k <= 0:
         raise ValueError(f"sigma_k must be positive, got {sigma_k!r}")
-    if max_range_k <= 0:
-        raise ValueError(f"max_range_k must be positive, got {max_range_k!r}")
 
-    tmax_arr = t_max.to_numpy().astype(np.float64)
-    tmin_arr = t_min.to_numpy().astype(np.float64)
-    if tmax_arr.shape != tmin_arr.shape:
-        raise ValueError(f"t_max shape {tmax_arr.shape!r} != t_min shape {tmin_arr.shape!r}")
-
-    t_mean = 0.5 * (tmax_arr + tmin_arr)
-    t_range = tmax_arr - tmin_arr
-
-    mean_score = np.exp(-((t_mean - target_temp_k) ** 2) / (2.0 * sigma_k**2))
-    range_score = np.clip(1.0 - (t_range / max_range_k), 0.0, 1.0)
-    score = mean_score * range_score
-
-    nan_mask = np.isnan(tmax_arr) | np.isnan(tmin_arr)
-    score = np.where(nan_mask, np.nan, score)
+    arr = temp_avg.to_numpy().astype(np.float64)
+    score = np.exp(-((arr - target_temp_k) ** 2) / (2.0 * sigma_k**2))
+    score = np.where(np.isnan(arr), np.nan, score)
 
     out = xr.DataArray(
         score,
-        coords=t_max.coords,
-        dims=t_max.dims,
+        coords=temp_avg.coords,
+        dims=temp_avg.dims,
         name="thermal_score",
     )
-    if t_max.rio.crs is not None:
-        out = out.rio.write_crs(t_max.rio.crs, inplace=False)
+    if temp_avg.rio.crs is not None:
+        out = out.rio.write_crs(temp_avg.rio.crs, inplace=False)
     return out

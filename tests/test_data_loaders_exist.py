@@ -14,7 +14,6 @@ import pytest
     [
         "load_raster",
         "load_lola_ldem",
-        "load_diviner",
         "load_illumination",
         "load_lend",
         "load_crater_catalog",
@@ -43,6 +42,12 @@ def test_downloader_callable(name: str) -> None:
 
     fn = getattr(download, name)
     assert callable(fn), f"{name} is not callable"
+
+
+def test_diviner_prp_loader_callable() -> None:
+    from selene_base.data.diviner_prp import load_diviner_prp
+
+    assert callable(load_diviner_prp)
 
 
 def test_dataset_registry_complete() -> None:

@@ -27,7 +27,6 @@ import yaml
 
 from selene_base.data.load import (
     load_crater_catalog,
-    load_diviner,
     load_illumination,
     load_lend,
     load_lola_ldem,
@@ -83,14 +82,6 @@ def _load_illumination_path(path: Path) -> xr.DataArray:
     return load_illumination(path)
 
 
-def _load_diviner_tmax_path(_path: Path) -> xr.DataArray:
-    return load_diviner().tbol_max
-
-
-def _load_diviner_tmin_path(_path: Path) -> xr.DataArray:
-    return load_diviner().tbol_min
-
-
 def _load_lend_path(path: Path) -> xr.DataArray:
     return load_lend(path)
 
@@ -100,7 +91,10 @@ RASTER_DATASETS: tuple[DatasetSpec, ...] = (
     DatasetSpec(
         name="lola",
         raw_check=(
-            DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.img",
+            # PDS3 driver opens the .lbl (which references the .img); put it
+            # first so spec.resolve() returns the file rasterio can actually
+            # parse. Sample-data path is a plain GeoTIFF.
+            DEFAULT_RAW_DIR / "lola" / "ldem_80s_80m.lbl",
             DEFAULT_RAW_DIR / "lola" / "sample_lola.tif",
         ),
         loader=_load_lola_path,
@@ -110,27 +104,16 @@ RASTER_DATASETS: tuple[DatasetSpec, ...] = (
     DatasetSpec(
         name="illumination",
         raw_check=(
-            DEFAULT_RAW_DIR / "illumination" / "avgvisib_65s_240m_201608.img",
+            DEFAULT_RAW_DIR / "illumination" / "avgvisib_65s_240m_201608.lbl",
             DEFAULT_RAW_DIR / "illumination" / "sample_illumination.tif",
         ),
         loader=_load_illumination_path,
         resampling="bilinear",
         note="continuous illumination percentage; bilinear preserves it.",
     ),
-    DatasetSpec(
-        name="diviner_tmax",
-        raw_check=(DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_max_sp.tif",),
-        loader=_load_diviner_tmax_path,
-        resampling="bilinear",
-        note="continuous Tbol field; bilinear is correct.",
-    ),
-    DatasetSpec(
-        name="diviner_tmin",
-        raw_check=(DEFAULT_RAW_DIR / "diviner" / "diviner_tbol_min_sp.tif",),
-        loader=_load_diviner_tmin_path,
-        resampling="bilinear",
-        note="continuous Tbol field; bilinear is correct.",
-    ),
+    # Diviner PRP is rasterised separately below — it's a triangular
+    # mesh, not a regular raster, and goes through the
+    # selene_base.data.diviner_prp loader.
     DatasetSpec(
         name="lend",
         raw_check=(DEFAULT_RAW_DIR / "lend" / "lend_csetn_sp.img",),
@@ -264,6 +247,55 @@ def run(
         size = out_path.stat().st_size
         echo(f"[done] crater_density -> {out_path} ({size:,} bytes)")
         results.append(PreprocessResult("crater_density", "cached", out_path, size))
+
+    # ------- Diviner PRP → temp_avg + temp_max + ice_depth rasters -------
+    diviner_xml = DEFAULT_RAW_DIR / "diviner" / "dlre_prp_south.xml"
+    diviner_tab = DEFAULT_RAW_DIR / "diviner" / "dlre_prp_south.tab"
+    diviner_layers = ("temp_avg", "temp_max", "ice_depth")
+    diviner_cog_paths = {
+        layer: processed_dir / f"diviner_{layer}_southpole_240m.tif" for layer in diviner_layers
+    }
+    diviner_caches_present = all(p.exists() for p in diviner_cog_paths.values())
+
+    if not diviner_caches_present and not (diviner_xml.exists() and diviner_tab.exists()):
+        echo(f"[skip] diviner_prp: source not present ({diviner_xml.parent})")
+        for layer in diviner_layers:
+            results.append(PreprocessResult(f"diviner_{layer}", "missing", None, 0))
+    elif diviner_caches_present and not overwrite:
+        for layer, path in diviner_cog_paths.items():
+            size = path.stat().st_size
+            echo(f"[skip] diviner_{layer}: {path.name} already cached")
+            results.append(PreprocessResult(f"diviner_{layer}", "cached", path, size))
+    else:
+        from selene_base.data.diviner_prp import load_diviner_prp
+
+        target_path = processed_dir / "lola_southpole_240m.tif"
+        if not target_path.exists():
+            echo(
+                "[skip] diviner_prp: needs the LOLA COG as a target grid; "
+                "ensure LOLA preprocess ran first"
+            )
+            for layer in diviner_layers:
+                results.append(PreprocessResult(f"diviner_{layer}", "missing", None, 0))
+        else:
+            import rioxarray  # local import keeps top-level imports light
+
+            target_grid = rioxarray.open_rasterio(target_path, masked=True).squeeze(
+                "band", drop=True
+            )
+            echo("[load] diviner PRP (PDS4 character table)")
+            layers = load_diviner_prp(
+                raw_dir=diviner_xml.parent,
+                target_grid=target_grid,
+                cache_dir=processed_dir,
+                overwrite=overwrite,
+                echo=echo,
+            )
+            for layer in diviner_layers:
+                path = diviner_cog_paths[layer]
+                size = path.stat().st_size if path.exists() else 0
+                results.append(PreprocessResult(f"diviner_{layer}", "cached", path, size))
+            del layers  # release file handles
 
     return results
 
