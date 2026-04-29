@@ -11,11 +11,25 @@ Score is a Gaussian on the mean:
 
     score = exp(-(Tavg - target)^2 / (2 sigma^2))
 
-with default ``target_temp_k = 230`` (~-43 °C, near typical lunar polar
-averages and inside the engineering range for thermal control), and
-``sigma = 50 K``.
+with default ``target_temp_k = 140`` and ``sigma_k = 30``.
 
-Filled in week 3; rewritten week 6 for the PRP single-input signature.
+**Week 8 parameter correction.** Earlier defaults (``target_temp_k = 230``,
+``sigma_k = 50``) put the Gaussian's peak at 230 K, *outside* the support
+of the data — Diviner PRP ``temp_avg`` for the south pole peaks at 211 K
+with a median near 131 K. Every cell scored in the Gaussian's tail and
+the criterion contributed almost no discriminative signal (week 7
+diagnostic: 0.325 ± 0.198 at our top-20 vs 0.113 ± 0.149 at NASA centroids,
+both deep in the tail of a 230 K peak).
+
+The corrected defaults put the peak inside the data distribution
+(140 K, near the median) with a narrower width (30 K) so a 30 K offset
+from a 140 K target now scores ~0.6 — the kind of contrast the
+criterion is designed to provide. This is a parameter correction, not
+a tuning preference: the previous values were factually outside the
+support of the input.
+
+Filled in week 3; rewritten week 6 for the PRP single-input signature;
+defaults corrected week 8.
 """
 
 from __future__ import annotations
@@ -28,21 +42,23 @@ import xarray as xr
 def compute(
     temp_avg: xr.DataArray,
     *,
-    target_temp_k: float = 230.0,
-    sigma_k: float = 50.0,
+    target_temp_k: float = 140.0,
+    sigma_k: float = 30.0,
 ) -> xr.DataArray:
     """Map annual-mean surface temperature to a [0, 1] thermal score.
 
     Args:
         temp_avg: DataArray of annual-mean surface temperature (K).
         target_temp_k: Mean temperature receiving the maximum score.
-            230 K (~-43 °C) is a defensible target — close to typical
-            lunar polar annual means and inside the engineering range
-            for thermal control. Was ``180 K`` in the original
-            week-3 spec when the criterion took Tmin; that value made
-            sense for "instantaneous comfortable temperature" but is
-            wrong for an annual-average input.
+            Default 140 K, between the data median (131 K) and the
+            actual habitat-relevant temperatures (regolith mean energy
+            budget around 150–200 K). The previous default of 230 K was
+            *outside* the data support and put the Gaussian in its tail
+            at every cell; see the module docstring for the full
+            correction rationale.
         sigma_k: Gaussian width on the mean temperature, in kelvin.
+            Default 30 K — tight enough to discriminate ±30 K offsets
+            cleanly (a 30 K offset scores ~0.61).
 
     Returns:
         DataArray of [0, 1] scores aligned with ``temp_avg``;
