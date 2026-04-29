@@ -1,0 +1,5 @@
+name: south_pole
+crs: "+proj=stere +lat_0=-90 +lat_ts=-90 +lon_0=0 +k=1 +x_0=0 +y_0=0 +R=1737400"
+resolution_m: 240
+bounds_m: [-304000, -304000, 304000, 304000]
+lat_max: -80.0
