@@ -41,6 +41,9 @@ from selene_base.criteria import (
     illumination as illumination_criterion,
 )
 from selene_base.criteria import (
+    los_to_earth as los_to_earth_criterion,
+)
+from selene_base.criteria import (
     seismic as seismic_criterion,
 )
 from selene_base.criteria import (
@@ -288,6 +291,36 @@ def _coupling_score(
     return out_path
 
 
+def _los_to_earth_score(
+    processed_dir: Path,
+    *,
+    pixel_size_m: float,
+    overwrite: bool,
+    echo: Callable[[str], None],
+    raw_dir: Path,
+) -> Path | None:
+    visibility_cog = processed_dir / "los_visibility_fraction_southpole_240m.tif"
+    if not visibility_cog.exists():
+        echo(
+            "[skip] los_to_earth: visibility-fraction COG not present at "
+            f"{visibility_cog}; run `selene preprocess` first"
+        )
+        return None
+
+    scored_dir = processed_dir / SCORED_SUBDIR
+    out_cog = scored_dir / "los_to_earth_score_southpole_240m.tif"
+    if out_cog.exists() and not overwrite:
+        echo(f"[skip] los_to_earth: {out_cog.name} already cached")
+        return out_cog
+
+    echo(f"[compute] los_to_earth from {visibility_cog.name}")
+    visibility = _open_cog(visibility_cog)
+    score = los_to_earth_criterion.compute(visibility)
+    out_path = cache_processed(score, "los_to_earth_score", scored_dir, overwrite=overwrite)
+    echo(f"[done] los_to_earth -> {out_path}")
+    return out_path
+
+
 def _seismic_score(
     processed_dir: Path,
     *,
@@ -352,6 +385,7 @@ CRITERION_FUNCS: dict[str, Callable[..., Path | None]] = {
     "hazard": _hazard_score,
     "thermal": _thermal_score,
     "ice": _ice_score,
+    "los_to_earth": _los_to_earth_score,
     "seismic": _seismic_score,
 }
 

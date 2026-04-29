@@ -97,6 +97,15 @@ def preprocess(
         "--overwrite",
         help="Re-cache COGs even if they already exist on disk.",
     ),
+    skip_los: bool = typer.Option(
+        False,
+        "--skip-los",
+        help=(
+            "Skip the slow Earth line-of-sight horizon-profile derivation "
+            "(~5–15 min on full-resolution LOLA). Useful for smoke tests "
+            "and runs that don't need the los_to_earth criterion."
+        ),
+    ),
 ) -> None:
     """Reproject every available raw raster onto the common 240 m grid.
 
@@ -110,6 +119,7 @@ def preprocess(
         region_config=region_config,
         processed_dir=processed_dir,
         overwrite=overwrite,
+        compute_los=not skip_los,
     )
     typer.echo("")
     typer.echo(_preprocess.format_summary(results))

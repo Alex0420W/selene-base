@@ -146,6 +146,7 @@ def run(
     processed_dir: Path = DEFAULT_PROCESSED_DIR,
     overwrite: bool = False,
     datasets: tuple[DatasetSpec, ...] | None = None,
+    compute_los: bool = True,
     echo: Callable[[str], None] = typer.echo,
 ) -> list[PreprocessResult]:
     """Reproject + cache every available raster dataset.
@@ -155,6 +156,11 @@ def run(
         processed_dir: Output directory for cached COGs.
         overwrite: Re-cache even when the COG already exists.
         datasets: Override the dataset list (used by tests).
+        compute_los: When ``True`` (default), derive the Earth-visibility
+            horizon profile and visibility-fraction COG from LOLA. Pass
+            ``False`` (e.g., from smoke tests on synthetic small grids)
+            to skip the slow ~5–15-minute horizon-march and the
+            downstream ``los_to_earth`` score grid.
         echo: Logging sink, defaults to ``typer.echo``.
 
     Returns:
@@ -274,6 +280,79 @@ def run(
         size = out_path.stat().st_size
         echo(f"[done] crater_density -> {out_path} ({size:,} bytes)")
         results.append(PreprocessResult("crater_density", "cached", out_path, size))
+
+    # ------- LOLA → Earth line-of-sight visibility fraction (week 9) -------
+    # The horizon profile is a 3D (azimuth, y, x) field cached as a
+    # compressed numpy archive. (netCDF would be more idiomatic for an
+    # xarray pipeline, but the only netCDF backend available without
+    # extra system deps is scipy, which doesn't support zlib — the
+    # uncompressed file would be ~930 MB. .npz with default zlib
+    # compresses the same float32 grid to ~80 MB.) The visibility
+    # fraction is the 2D consumer-facing artifact and ships as a COG.
+    lola_for_los = processed_dir / "lola_southpole_240m.tif"
+    horizon_npz = processed_dir / "lola_horizon_profile_southpole_240m.npz"
+    visibility_cog = processed_dir / "los_visibility_fraction_southpole_240m.tif"
+    if not compute_los:
+        echo("[skip] los_visibility: compute_los=False (smoke test path)")
+        results.append(PreprocessResult("los_visibility", "skipped", None, 0))
+    elif not lola_for_los.exists():
+        echo(f"[skip] los_visibility: LOLA COG not present at {lola_for_los}")
+        results.append(PreprocessResult("los_visibility", "missing", None, 0))
+    elif visibility_cog.exists() and not overwrite:
+        size = visibility_cog.stat().st_size
+        echo(f"[skip] los_visibility: {visibility_cog.name} already cached")
+        results.append(PreprocessResult("los_visibility", "cached", visibility_cog, size))
+    else:
+        import numpy as np
+        import rioxarray
+        from pyproj import Transformer
+
+        from selene_base.criteria import los_to_earth
+
+        echo(f"[derive] horizon_profile from {lola_for_los.name} (slow: ~5–15 min)")
+        elevation = (
+            rioxarray.open_rasterio(lola_for_los, masked=True)
+            .squeeze("band", drop=True)
+            .rename("elevation_m")
+        )
+        horizon = los_to_earth.derive_horizon_profile(elevation, pixel_size_m=resolution_m)
+        if horizon_npz.exists():
+            horizon_npz.unlink()
+        np.savez_compressed(
+            horizon_npz,
+            horizon_profile_deg=horizon.to_numpy().astype(np.float32),
+            azimuth_deg=horizon["azimuth"].to_numpy().astype(np.float32),
+        )
+        size = horizon_npz.stat().st_size
+        echo(f"[done] horizon_profile -> {horizon_npz} ({size:,} bytes)")
+        results.append(PreprocessResult("horizon_profile", "cached", horizon_npz, size))
+
+        echo("[derive] Earth visibility fraction from horizon profile")
+        xs = elevation["x"].to_numpy()
+        ys = elevation["y"].to_numpy()
+        xx, yy = np.meshgrid(xs, ys)
+        transformer = Transformer.from_crs(
+            target_crs, "+proj=longlat +R=1737400 +no_defs +type=crs", always_xy=True
+        )
+        lons, lats = transformer.transform(xx, yy)
+        pixel_lat = xr.DataArray(lats, dims=elevation.dims, coords=elevation.coords).rio.write_crs(
+            elevation.rio.crs, inplace=False
+        )
+        pixel_lon = xr.DataArray(lons, dims=elevation.dims, coords=elevation.coords).rio.write_crs(
+            elevation.rio.crs, inplace=False
+        )
+        gamma = xr.DataArray(
+            np.arctan2(xx, yy), dims=elevation.dims, coords=elevation.coords
+        ).rio.write_crs(elevation.rio.crs, inplace=False)
+        visibility = los_to_earth.compute_earth_visibility_fraction(
+            horizon, pixel_lat, pixel_lon, gamma
+        )
+        out_path = cache_processed(
+            visibility, "los_visibility_fraction", processed_dir, overwrite=overwrite
+        )
+        size = out_path.stat().st_size
+        echo(f"[done] los_visibility_fraction -> {out_path} ({size:,} bytes)")
+        results.append(PreprocessResult("los_visibility", "cached", out_path, size))
 
     # ------- Diviner PRP → temp_avg + temp_max + ice_depth rasters -------
     diviner_xml = DEFAULT_RAW_DIR / "diviner" / "dlre_prp_south.xml"

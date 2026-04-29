@@ -31,6 +31,7 @@ DEFAULT_CRITERIA = (
     "thermal",
     "ice",
     "hazard",
+    "los_to_earth",
     "seismic",
 )
 

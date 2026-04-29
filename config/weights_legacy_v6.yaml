@@ -1,0 +1,15 @@
+# selene-base weights — weeks 7 and 8 baseline (six criteria, no LOS).
+#
+# Preserved at the start of week 9 so the v1.0.0 result is reproducible
+# via `selene rank --weights config/weights_legacy_v6.yaml`. The active
+# default in config/weights_default.yaml adds the los_to_earth criterion
+# at 0.15 weight (week 9). The pre-week-7 (5-criterion) weight vector is
+# preserved as config/weights_legacy.yaml.
+
+illumination: 0.20
+ice: 0.20
+coupling: 0.20
+slope: 0.15
+thermal: 0.10
+hazard: 0.10
+seismic: 0.05

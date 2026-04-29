@@ -112,6 +112,7 @@ def test_pipeline_run_end_to_end(
         region_config=region_yaml,
         processed_dir=processed,
         datasets=_spec_for(synthetic_lola),
+        compute_los=False,
         echo=lambda _msg: None,
     )
     assert any(r.status == "cached" and r.name == "lola" for r in results)
@@ -152,6 +153,7 @@ def test_cli_preprocess_and_score_exit_zero(
             str(region_yaml),
             "--processed-dir",
             str(processed),
+            "--skip-los",
         ],
     )
     assert pre.exit_code == 0, pre.output
@@ -206,6 +208,7 @@ def test_pipeline_rank_runs_after_score(
         region_config=region_yaml,
         processed_dir=processed,
         datasets=_spec_for(synthetic_lola),
+        compute_los=False,
         echo=lambda _msg: None,
     )
     _score.run(
@@ -251,6 +254,7 @@ def test_cli_rank_exit_zero(
             str(region_yaml),
             "--processed-dir",
             str(processed),
+            "--skip-los",
         ],
     )
     assert pre.exit_code == 0, pre.output
