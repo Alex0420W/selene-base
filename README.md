@@ -1,27 +1,27 @@
 # selene-base
 
-> Multi-criteria habitat suitability for the lunar south pole. A twelve-week engineering arc that diagnosed a structural limit of weighted-sum decision analysis under global ranking, validated against authoritative USGS-published Artemis III region polygons, reframed the analysis in v1.3.0 to match NASA's actual selection process (per-region ranking with the published HLS hard-constraint filters), and in v1.4.0 ships the comparison framework against Wueller et al. 2026's peer-reviewed 130-site catalog — pending acquisition of the gated supplementary data release.
+> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis III region polygons (DOI 10.5066/P1MEQ6UK). v1.3.0 produces a per-region landing-site catalog of **23 HLS-compliant candidate sites across 8 of NASA's 9 Artemis III regions**, using NASA's published HLS hard-constraint filters and matching the methodology of Wueller et al. 2026 (JGR Planets, 130 sites). v1.4.0 ships the comparison framework against Wueller's catalog; quantitative agreement numbers are pending the gated supplementary data release. The twelve-week engineering arc — including the diagnosis of why a global-ranking framing produced 0/20 alignment until reframed to per-region selection — is documented in the release history below.
 
-[![CI](https://img.shields.io/badge/ci-pending-lightgrey)](.github/workflows/ci.yml)
+[![CI](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml/badge.svg)](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![Status](https://img.shields.io/badge/status-v0.1-brightgreen)](#roadmap)
+[![Release](https://img.shields.io/github/v/release/Alex0420W/selene-base)](https://github.com/Alex0420W/selene-base/releases)
 
-NASA's Artemis III mission will land humans near the lunar south pole around 2027. Selecting a base site there is a multi-criteria optimisation problem: the south pole is a maze of crater rims that catch grazing sunlight, deep permanently-shadowed cold-traps that may host water ice, and active thrust faults that re-localised Apollo-era shallow moonquakes have placed within tens of kilometres of candidate sites. **`selene-base`** fuses the modern LRO-era remote-sensing record (LOLA topography, Diviner thermal climatology, Mazarico illumination maps, the Robbins crater catalog, the Watters lobate-scarp catalog) with historical Apollo seismic context to score every 240 m pixel of the polar cap and rank top candidate sites. The pipeline is end-to-end reproducible — `selene download && selene preprocess && selene score && selene rank && selene validate && selene viz` produces a ranked GeoJSON, per-site HTML reports, and an interactive web map, on a developer laptop, in minutes, from public data.
+NASA's Artemis III mission will land humans near the lunar south pole later this decade. Selecting a base site there is a multi-criteria optimisation problem: the south pole is a maze of crater rims that catch grazing sunlight, deep permanently-shadowed cold-traps that may host water ice, and active thrust faults that re-localised Apollo-era shallow moonquakes have placed within tens of kilometres of candidate sites. **`selene-base`** fuses the modern LRO-era remote-sensing record (LOLA topography, Diviner Polar Resource Product thermal and ice-stability data, Mazarico illumination maps, the Robbins crater catalog) with derived geometric criteria (Earth line-of-sight from horizon ray-marching, spatial coupling between PSRs and sunlit ridges) to score every 240 m pixel of the polar cap and rank top candidate sites. The pipeline is end-to-end reproducible — `selene download && selene preprocess && selene score && selene rank-per-region && selene validate-per-region && selene viz` produces the NASA-aligned per-region catalog, per-site HTML reports, and an interactive web map, on a developer laptop, in minutes, from public data.
 
-## Headline finding (v1.3.0)
+## Headline finding
 
-The project's central output is now **a per-region HLS-compliant landing site catalog**:
+The project's central output is **a per-region HLS-compliant landing site catalog**:
 
-> **23 sites across 8 / 9 USGS Artemis III regions, all guaranteed inside their published polygon and satisfying NASA's published HLS hard-constraint filters by construction.** The sole region with zero compliant cells is **Malapert Massif** — a real finding driven by terrain (no cell inside the Malapert polygon simultaneously satisfies slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 %). The best-scoring region is **Mons Mouton Plateau** at score 0.746 with the largest HLS-eligible area fraction (15.07 %); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.10 % of polygon cells pass the HLS filters and only 2 sites fit at the 2 km NMS separation. Globally, **9.44 %** of the 240 m polar grid is HLS-eligible.
+> **23 sites across 8 / 9 USGS Artemis III regions, all guaranteed inside their published polygon and satisfying NASA's published HLS hard-constraint filters by construction.** The sole region with zero compliant cells is **Malapert Massif** — a real terrain-driven finding (no cell inside the Malapert polygon simultaneously satisfies slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 % at 240 m public-data resolution). The best-scoring region is **Mons Mouton Plateau** at score 0.746 with the largest HLS-eligible area fraction (15.07 %); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.10 % of polygon cells pass the HLS filters and only 2 sites fit at the 2 km NMS separation. Globally, **9.44 %** of the 240 m polar grid is HLS-eligible.
 
-![Per-region HLS-compliant ranking: 23 sites across 8/9 USGS regions](docs/img/per_region_ranking.png)
+![Per-region HLS-compliant ranking: 23 sites across 8/9 USGS regions](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)
 
-This is a **reframing**, not a refinement. The previous versions (v1.0.0–v1.2.0) measured a different question — global ranking of habitat suitability followed by validation against NASA polygons — and reported 0/20 because globally-selected top sites pick the polar rim band where the coupling criterion is non-zero rather than the *interior* of NASA-published regions. The Wueller et al. 2026 (JGR Planets, [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)) parallel — which found 130 candidate sites with similar within-region HLS-filtered methodology — is the authoritative confirmation that **per-region HLS-filtered ranking is the right framing for a NASA-aligned site catalog**.
+This headline is a **reframing**, not a refinement. The previous versions (v1.0.0–v1.2.0) measured a different question — global ranking of habitat suitability followed by validation against NASA polygons — and reported 0/20 because globally-selected top sites pick the polar rim band where the coupling criterion is non-zero rather than the *interior* of NASA-published regions. The Wueller et al. 2026 (JGR Planets, [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)) parallel — which found 130 candidate sites with similar within-region HLS-filtered methodology — confirms that **per-region HLS-filtered ranking is the right framing for a NASA-aligned site catalog**.
 
-> **A note on construction**: v1.3.0 sites are guaranteed inside USGS polygons by construction, since the algorithm searches *within* polygons rather than globally. The relevant scientific question is therefore not "are they inside?" but "do they identify the same cells NASA's process identifies?" — addressed by the planned v1.4 comparison against Wueller's 130 published sites.
+> **A note on construction**: v1.3.0 sites are guaranteed inside USGS polygons by construction, since the algorithm searches *within* polygons rather than globally. The relevant scientific question is therefore not "are they inside?" but "do they identify the same cells NASA's process identifies?" — addressed by the v1.4.0 comparison framework against Wueller's 130 published sites. Quantitative agreement numbers are pending data acquisition (see "Data acquisition status" below).
 
-The earlier engineering arc (weeks 1-10, v1.0.0-v1.2.0) is preserved as the project's diagnostic history — it documents *why* the global-ranking framing produced 0 inside-polygon results across six versions of progressive refinement. The headline below summarises the engineering arc in order; the v1.3 reframing supersedes the global-ranking interpretation but does not invalidate the diagnostic findings.
+The earlier engineering arc (weeks 1–10, v1.0.0–v1.2.0) is preserved as the project's diagnostic history — it documents *why* the global-ranking framing produced 0 inside-polygon results across six versions of progressive refinement. The summary below tracks the engineering arc in order; the v1.3 reframing supersedes the global-ranking interpretation but does not invalidate the diagnostic findings.
 
 ### Engineering-arc findings (v1.0.0 — v1.2.0): why global ranking gave 0 / 20
 
@@ -39,14 +39,13 @@ Across ten weeks of progressive refinement against NASA's nine announced Artemis
 
 6. **The right *framing* — per-region ranking with HLS hard filters (week 11, v1.3.0) — produces 23 sites across 8/9 NASA regions.** The first five stages of the arc all rank globally and ask "did our top-20 fall inside NASA's regions?" The right question, mirroring NASA's own selection process, is "within each NASA region, which cells satisfy the HLS landing requirements and rank highest by suitability?" Reframing the search this way produces a complete per-region landing-site catalog. **The 0/20 result through v1.2.0 reflected the global-ranking framing, not a flaw in the model**: globally-best cells cluster on the polar rim band where the coupling criterion is non-zero; per-region-best HLS-compliant cells cluster inside NASA polygons by construction. Both findings are valid — the diagnostic arc is preserved below for context.
 
-The combined picture: the criteria are tuned, the validation primitive is authoritative, and **the framing is now NASA-aligned**. The remaining open scientific question — "do the v1.3 sites identify the same cells NASA's process identifies?" — is addressable via direct comparison against Wueller et al. 2026's 130 published sites, planned for v1.4.
+The combined picture: the criteria are tuned, the validation primitive is authoritative, and **the framing is now NASA-aligned**. The remaining open scientific question — "do the v1.3 sites identify the same cells NASA's process identifies?" — is addressable via direct comparison against Wueller et al. 2026's 130 published sites; v1.4.0 ships the comparison framework, with quantitative numbers pending data acquisition (see "Data acquisition status" below).
 
-![Coupling score with NASA candidates and our top-20 overlaid](docs/img/coupling_overlay.png)
+![Diagnostic from v1.0–v1.2: model's top-20 (red) cluster on the rim band where the coupling criterion is non-zero; NASA centroids (cyan) sit in the disk interiors](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/coupling_overlay.png)
 
 ### Six-stage validation history (global ranking, v1.0.0 — v1.2.0)
 
-The table below tracks the *global*-ranking inside-polygon count. Stage 7 (v1.3.0, week 11) reframes the analysis to per-region ranking; the global-ranking inside-polygon count remains 0/20 by construction of the global framing, but is no longer the project's headline.
-
+The table below tracks the *global*-ranking inside-polygon count. v1.3.0 (week 11) reframes the analysis to per-region ranking; the global-ranking inside-polygon count remains 0/20 by construction of the global framing, but is no longer the project's headline.
 
 | Validation metric | 3-criteria | 5-criteria (+ PRP) | 6-criteria (+ coupling) | 6-crit + thermal/polygon | 7-criteria (+ LOS) | **7-criteria + USGS polygons** |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -67,7 +66,7 @@ The table below tracks the *global*-ranking inside-polygon count. Stage 7 (v1.3.
 | thermal score at our top-20 vs NASA centroids | n/a | 0.239 vs 0.113 (in tail) | 0.325 vs 0.113 (in tail) | 0.965 vs 0.526 | 0.962 vs 0.526 | 0.962 vs 0.526 |
 | LOS-to-Earth score at our top-20 vs NASA centroids | n/a | n/a | n/a | n/a | 1.000 vs 0.525 (bimodal) | 1.000 vs 0.525 |
 
-The default-weights inside-region number is *0 across all six stages, against every validation primitive tried*. What moved is the structure behind that number — the sensitivity ceiling lifted twice (2 → 3 → 4 regions), the closest-edge metric collapsed (47.8 → 12.3 km against disks; the v1.2 USGS polygons reset the closest-distance to 41.5 km because USGS's "Slater Plain" sits 180° away in longitude from where the legacy disk centroid placed it), **the polygon-inside count became sample-non-zero against disks** (21/200 weight regimes hit 1/20 or more), and one NASA region (Cabeus B) came within disk-radius of a top site. v1.2.0 against the authoritative USGS polygons confirms the geometric separation is *not* a disk-approximation artefact: even with the right validation reference, only 6/200 weight regimes produce ≥1 site inside any USGS polygon, and the default-weights answer is 0/20. **The model picks the polar rim band where the coupling criterion is non-zero; NASA's published landing-region polygons sit 41–135 km away from that band; no setting of physics-driven defaults collapses those two geometries onto each other** — that is the project's terminal finding.
+The default-weights inside-region number is *0 across all six stages, against every validation primitive tried*. What moved is the structure behind that number — the sensitivity ceiling lifted twice (2 → 3 → 4 regions), the closest-edge metric collapsed (47.8 → 12.3 km against disks; the v1.2 USGS polygons reset the closest-distance to 41.5 km because USGS's "Slater Plain" sits 180° away in longitude from where the legacy disk centroid placed it), **the polygon-inside count became sample-non-zero against disks** (21/200 weight regimes hit 1/20 or more), and one NASA region (Cabeus B) came within disk-radius of a top site. v1.2.0 against the authoritative USGS polygons confirms the geometric separation is *not* a disk-approximation artefact: even with the right validation reference, only 6/200 weight regimes produce ≥1 site inside any USGS polygon, and the default-weights answer is 0/20. **Under the global-ranking framing, the model picks the polar rim band where the coupling criterion is non-zero; NASA's published landing-region polygons sit 41–135 km away from that band; no setting of physics-driven defaults collapses those two geometries onto each other.** v1.3.0 reframes the analysis to per-region ranking and resolves this — see "Per-region HLS-compliant catalog" below.
 
 For the per-region distance table see `data/outputs/validation.json` (now contains both centroid-distance and polygon-inside metrics), or run `selene validate` on a fresh checkout. The interactive map lives at [`data/outputs/webmap.html`](data/outputs/webmap.html) after `selene viz`; per-site reports under [`data/outputs/sites/`](data/outputs/sites/).
 
@@ -80,7 +79,7 @@ data/raw/<dataset>/        --load-->  xr.DataArray (native CRS)
                               |
 data/processed/<name>_southpole_240m.tif        (cached COG)
                               |
-                              v criterion.compute(...)            [six criteria]
+                              v criterion.compute(...)            [seven criteria]
                               |
 data/processed/scored/<name>_score_southpole_240m.tif
                               |
@@ -88,9 +87,12 @@ data/processed/scored/<name>_score_southpole_240m.tif
                               |
 data/outputs/score_southpole.tif                (final aggregate COG)
                               |
-                              v scoring.ranking.top_n_sites()     [NMS at 25 km]
+                              +--> scoring.ranking.top_n_sites_per_region()  [v1.3 primary]
+                              |    + HLS hard filters per USGS polygon
+                              |    -> data/outputs/per_region/sites.{geojson,csv}
                               |
-data/outputs/top_sites.{geojson,csv}            (ranked sites + per-criterion sub-scores)
+                              +--> scoring.ranking.top_n_sites()             [legacy global]
+                              |    -> data/outputs/top_sites.{geojson,csv}
                               |
                               v validation.comparison + viz
                               |
@@ -105,22 +107,26 @@ cd selene-base
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e .
 
-# Five-line clone-to-webmap path on the bundled ~12 MB sample dataset:
+# Five-line clone-to-webmap path on the bundled ~12 MB sample dataset
+# (a single LOLA tile, the south-pole subset of the Mazarico illumination
+# raster, and a 1000-row crater catalog excerpt — enough to exercise the
+# full preprocess -> score -> rank pipeline end-to-end):
 selene download --sample        # downloads + extracts data/raw/<sample>
 selene preprocess               # warps + crater-density rasterisation -> data/processed/
-selene score                    # six criteria; missing ones renormalise out cleanly
-selene rank --top-n 20          # NMS + per-criterion sub-scores -> top_sites.{geojson,csv}
+selene score                    # seven criteria; missing ones renormalise out cleanly
+selene rank-per-region --n-per-region 3   # NASA-aligned per-USGS-polygon catalog
 selene viz                      # webmap.html + per-site HTML reports
-
-# Per-region HLS-compliant ranking (v1.3.0, NASA-aligned framing):
-selene rank-per-region --n-per-region 3  # within each USGS polygon, top-3 HLS-compliant sites
-selene validate-per-region               # per-region summary: n sites, eligible-area %, best score
+                                # (note: webmap loads Leaflet from a CDN on
+                                #  first open; everything else is offline-safe)
 
 # Diagnostic & robustness (legacy global-ranking framing):
+selene rank --top-n 20          # global NMS top-N
 selene validate                 # alignment metrics vs NASA's nine candidates
+selene validate-per-region      # per-region summary: n sites, eligible-area %, best score
 selene compare                  # per-criterion delta our top-20 vs NASA centroids
 selene sensitivity --n-samples 200       # 200-sample weight-vector simplex sweep
 selene coupling-sweep                    # tune coupling_distance_km against alignment
+selene compare-wueller          # comparison harness vs Wueller 2026 (placeholder data)
 
 # Full-resolution analysis (~900 MB raw, 4 verified URLs):
 selene download robbins         # ~92 MB
@@ -128,7 +134,7 @@ selene download lola            # ~115 MB
 selene download illumination    # ~82 MB
 selene download diviner         # ~605 MB Diviner Polar Resource Product (PRP)
 # selene download lend / scarps remain TODO-flagged
-selene preprocess && selene score && selene rank --top-n 20 --min-distance-km 25
+selene preprocess && selene score && selene rank-per-region --n-per-region 3
 ```
 
 `selene --help` lists every subcommand; `selene <cmd> --help` shows its options.
@@ -143,7 +149,7 @@ Every criterion produces a `[0, 1]` score grid where 1 is "best" and 0 is "unusa
 | **Illumination** | $s = \min(x/x_t,\,1)$ | Mazarico avgvisib 65°S 240 m | 240 m | bilinear | $x_t = 0.70$ |
 | **Thermal** | $s = e^{-(\bar T - T^\star)^2/(2\sigma^2)}$ on annual-mean Tavg | **Diviner PRP** `temp_avg` (PDS4) | triangle mesh -> 240 m | linear griddata | $T^\star=140\,$K, $\sigma=30\,$K (week 8 correction; was 230 / 50, outside data support) |
 | **Ice** | $s = \mathrm{clip}(1-d/d_{\max} + \text{bonuses},\,0,\,1)$ on PRP ice-stability depth | **Diviner PRP** `ice_depth` (PDS4) | triangle mesh -> 240 m | nearest griddata | $d_{\max}=2.87\,$m, surface bonus 0.5, near-PSR bonus 0.2 |
-| **Hazard** | $s = \mathrm{clip}(1-d/d_{\mathrm{sat}},\,0,\,1)$ | Robbins 2018 catalog | vector -> 240 m density | KDTree, 3 km radius | $d_{\mathrm{sat}}=50$ |
+| **Hazard** | $s = \mathrm{clip}(1-d/d_{\mathrm{sat}},\,0,\,1)$ | Robbins 2019 catalog | vector -> 240 m density | KDTree, 3 km radius | $d_{\mathrm{sat}}=50$ |
 | **Coupling** | $s = \max(0,\,1-d_{\text{PSR}}/d_c) \cdot \max(0,\,1-d_{\text{ridge}}/d_c)$ | derived: illumination + slope | 240 m | distance transform | $d_c = 5\,$km |
 | **LOS-to-Earth** | linear ramp on per-pixel Earth visibility fraction over libration | derived: LOLA elevation (horizon profile) | 240 m | bilinear ray sampling | $\text{vis}_{\min}=0.20,\,\text{vis}_{\text{target}}=0.50$ |
 | **Seismic** | $s = \mathrm{clip}(\delta/\delta_{\mathrm{safe}},\,0,\,1)$ | Watters scarp catalog (TODO) | vector -> 240 m distance | KDTree, 1 km densified vertices | $\delta_{\mathrm{safe}}=50\,$km |
@@ -156,7 +162,7 @@ The PSR mask used by the ice criterion is still derived from the Mazarico illumi
 
 Default weights from [`config/weights_default.yaml`](config/weights_default.yaml): illumination 0.18, ice 0.18, coupling 0.18, los_to_earth 0.15, slope 0.13, thermal 0.08, hazard 0.07, seismic 0.03. **The 0.15 LOS weight was chosen *before* the week 9 validation rerun on physics-and-operations grounds**, not after seeing the result: LOS is a real physical criterion NASA prioritises in mission planning (above thermal and hazard for crewed-comms-critical sites), but is not as high-leverage as illumination/ice/coupling because it is a more binary-ish constraint (works/doesn't work given a horizon) than a continuous optimisation target. 0.15 places it between hazard (mostly redundant with slope at the south pole) and slope (a hard buildability constraint). Older weight vectors are preserved: [`config/weights_legacy.yaml`](config/weights_legacy.yaml) for the 5-criterion baseline (no coupling, no LOS); [`config/weights_legacy_v6.yaml`](config/weights_legacy_v6.yaml) for the v1.0.0 6-criterion vector (no LOS).
 
-### Per-region vs global ranking (week 11, v1.3.0)
+### Per-region vs global ranking (v1.3.0)
 
 Through v1.2.0, the pipeline ran **global ranking**: the aggregate score grid is NMS-extracted across the entire ±304 km polar grid, producing a top-20 list that *may or may not* fall inside NASA polygons. Validation then asked "did our top-20 hit the polygons?" — and reported 0/20 across six versions of progressive refinement.
 
@@ -164,9 +170,9 @@ Through v1.2.0, the pipeline ran **global ranking**: the aggregate score grid is
 
 This mirrors the methodology in **Wueller et al. 2026** (JGR Planets, [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)), which catalogued 130 candidate Artemis-III sites with the same per-region + HLS-filter approach. The two approaches use different soft-criterion stacks but the same outer framing.
 
-The legacy `selene rank` command is preserved for continuity with the v1.0.0–v1.2.0 engineering arc; both ship in v1.3.0. Per-region ranking is the new primary path.
+The legacy `selene rank` command is preserved for continuity with the v1.0.0–v1.2.0 engineering arc; both ship in v1.3.0+. Per-region ranking is the primary path.
 
-### HLS hard-constraint filters (week 11)
+### HLS hard-constraint filters (v1.3.0)
 
 The four NASA HLS thresholds applied as a multiplicative AND inside each USGS polygon:
 
@@ -181,13 +187,13 @@ These thresholds are NASA-published values. Sources:
 
 - NASA HLS specification (NASA 2019).
 - Gracy & Lee 2024, *Update on the Artemis III Reference Mission*, LPSC Abstract #1695.
-- Wueller, L., et al. 2026, JGR Planets, doi:10.1029/2025JE009434.
+- Wueller, F., et al. 2026, JGR Planets, doi:10.1029/2025JE009434.
 
 They are not tuneable from the validation result; the ranker accepts them as input parameters but the defaults reflect the published NASA values verbatim. A site that fails any one of the four filters is disqualified regardless of how well it scores on the soft criteria.
 
 The 100 m buffer is computed *globally* on the slope grid (the distance from a cell to the nearest cell with slope $> 8°$ doesn't depend on which polygon owns the cell) and then masked to each polygon. Within each polygon, the surviving HLS-compliant cells are ranked by aggregate score, and up to `n_per_region` sites are NMS-extracted at a default 2 km separation.
 
-### The spatial-coupling criterion (week 7)
+### The spatial-coupling criterion (v1.0.0, week 7)
 
 `criteria/coupling.py` is the structural fix the week 6 diagnostic identified. It scores cells by *joint proximity* to two distinct features:
 
@@ -202,11 +208,11 @@ The product (not sum) is the conjunction. Failing either falloff drives the scor
 
 The criterion produces a **sparse mask**: only 0.12 % of finite cells exceed 0.0; only 0.07 % exceed 0.1. The polar rim band shows up clearly; the rest of the cap is essentially black:
 
-![Coupling score, log-scaled — sparse rim band](docs/img/coupling_score.png)
+![Coupling score, log-scaled — sparse rim band](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/coupling_score.png)
 
 The single tuning knob is `coupling_distance_km`. `selene coupling-sweep` runs the validation pipeline at 1–20 km in 8 steps and plots NASA-region alignment as a function of that knob:
 
-![Spatial-coupling distance sweep vs alignment](docs/img/coupling_distance_sweep.png)
+![Spatial-coupling distance sweep vs alignment](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/coupling_distance_sweep.png)
 
 | coupling_distance_km | regions matched within 25 km |
 | ---: | ---: |
@@ -215,7 +221,7 @@ The single tuning knob is `coupling_distance_km`. `selene coupling-sweep` runs t
 
 The curve is monotone-but-flat: tightening the cap below 10 km matches no NASA regions; loosening it to 15 km picks up the Slater Plain / de Gerlache Rim 2 pair (the two NASA candidates already nearest the high-coupling band) and stays at 2/9 through 20 km. **The 15 km threshold equals the validation disk radius** — that's the geometric fingerprint of the validation-metric finding: the criterion can only "match" a NASA region when the matching tolerance equals the disk approximation, because the sites it picks fall on the rim band, not inside the centroid disks. The default 5 km is kept; the criterion is doing what its math says.
 
-### The Earth line-of-sight criterion (week 9)
+### The Earth line-of-sight criterion (v1.1.0, week 9)
 
 `criteria/los_to_earth.py` is the seventh criterion, derived from the already-cached LOLA elevation grid in two passes:
 
@@ -236,11 +242,12 @@ A few choices in the pipeline are worth surfacing because they materially affect
 - **Triangle mesh → raster rasterisation.** Diviner PRP's 2.88 M triangular-mesh facets are interpolated to the 240 m polar stereographic grid via `scipy.interpolate.griddata` (linear for temperatures, nearest for the discontinuous ice-depth field) — not rasterised by polygon fill, which would be both slower and physically meaningless for sparse triangle centres.
 - **Cloud-Optimized GeoTIFF caching with overviews.** Every reprojected raster is written as a COG with internal tiling and DEFLATE compression, so re-running `selene score` after a fresh clone is essentially free.
 - **Two independent sensitivity sweeps.** Latin-hypercube weight-vector sweep (200 samples on the simplex) characterises robustness to weight choice; coupling-distance sweep (8 points across 1–20 km) characterises robustness to the single tunable knob in the spatial-coupling criterion. Both ship as CLI subcommands.
-- **Two complementary validation metrics under one command.** `selene validate` reports both the legacy centroid-distance number and the week 8 polygon-inside number side by side, so a single run produces the full geometric story rather than forcing a choice between primitives.
+- **Three complementary validation metrics under one command.** `selene validate` reports the legacy centroid-distance number, the v1.0 polygon-inside number against 15 km disks, and the v1.2 polygon-inside number against authoritative USGS polygons side by side, so a single run produces the full geometric story rather than forcing a choice between primitives.
 - **CI smoke test on bundled sample data.** A separate CI job downloads the ~12 MB sample tarball and runs `preprocess → score → rank → validate → compare` end-to-end on every push to `main`. Catches integration regressions unit tests miss.
-- **Cache horizon-profile as compressed numpy, not GeoTIFF.** The week-9 LOS criterion needs a 3D ``(azimuth, y, x)`` horizon field that doesn't fit a single-band GeoTIFF cleanly; netCDF is the idiomatic xarray choice but the only netCDF backend available without compiled `netCDF4`/`h5netcdf` system deps is `scipy`, and that backend doesn't accept zlib compression — leaving an uncompressed ~930 MB file. Switching to `np.savez_compressed` keeps the cache pure-numpy, compresses the same float32 grid to ~840 MB without new dependencies, and the consumer (`compute_earth_visibility_fraction`) doesn't need the rio metadata anyway. The 2D consumer-facing artifact (`los_visibility_fraction_southpole_240m.tif`) stays as a normal COG.
+- **Cache horizon-profile as compressed numpy, not GeoTIFF.** The v1.1 LOS criterion needs a 3D ``(azimuth, y, x)`` horizon field that doesn't fit a single-band GeoTIFF cleanly; netCDF is the idiomatic xarray choice but the only netCDF backend available without compiled `netCDF4`/`h5netcdf` system deps is `scipy`, and that backend doesn't accept zlib compression — leaving an uncompressed ~930 MB file. Switching to `np.savez_compressed` keeps the cache pure-numpy, compresses the same float32 grid to ~840 MB without new dependencies, and the consumer (`compute_earth_visibility_fraction`) doesn't need the rio metadata anyway. The 2D consumer-facing artifact (`los_visibility_fraction_southpole_240m.tif`) stays as a normal COG.
 - **Authoritative validation reference, bundled in-repo.** Validation against NASA's Artemis III candidate regions uses USGS's officially-published simplified region envelopes ([DOI 10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK)), not synthesised disk approximations. The dataset shipped late in development; v1.0.0 and v1.1.0 used 15 km-radius disks, which we found systematically misrepresent the actual region geometries (most are ~400 km² quadrilaterals; Mons Mouton Plateau alone is 4452 km², 6× larger than the disk; one disk centroid for "Slater Plain" sits ~180° in longitude away from the USGS polygon's actual location). v1.2.0 ships the USGS GeoJSON in [`src/selene_base/validation/data/`](src/selene_base/validation/data/) so the validation primitive is reproducible without re-downloading external data, and the disk metrics are kept in parallel for continuity with the v1.0 / v1.1 validation history.
 - **Per-region search-space framing.** v1.3.0's `selene rank-per-region` searches *within* each USGS polygon rather than globally, with NASA's published HLS hard-constraint filters applied as a precondition. The two CLI subcommands ship side-by-side: the legacy `selene rank` produces a global top-N for continuity; `selene rank-per-region` produces the NASA-aligned per-polygon catalog. The choice is deliberately surfaced rather than hidden behind a flag — they answer two genuinely different questions ("globally most habitat-suitable cells" vs "best HLS-compliant cells *within each NASA candidate region*"), and the v1.0–v1.2 engineering arc is the diagnostic of why those questions diverge.
+- **Synthetic-placeholder labelling for v1.4.0's gated-data state.** The Wueller 2026 catalog is paywalled at AGU/Wiley and no open data release was found. v1.4.0 ships the comparison framework with a clearly-labelled 5-row synthetic placeholder CSV; `is_synthetic_placeholder` propagates a `using_synthetic_placeholder = true` flag through every output channel (CLI banner, JSON, CSV, plot title) so no downstream reader can mistake the placeholder run for a real comparison. Two real-data tests are explicitly marked `skip(reason="awaiting upstream data")`. The framework is ready for a data swap-in to produce the real numbers in v1.4.1.
 
 ## Validation
 
@@ -248,7 +255,7 @@ A few choices in the pipeline are worth surfacing because they materially affect
 
 `selene rank-per-region` followed by `selene validate-per-region` produces the NASA-aligned per-polygon catalog: for each USGS polygon, the cells passing every HLS hard filter are ranked by aggregate suitability score, and up to ``n_per_region`` sites (default 3) are NMS-extracted at 2 km separation.
 
-![Per-region HLS-eligibility maps for all nine USGS polygons](docs/img/per_region_eligibility.png)
+![Per-region HLS-eligibility maps for all nine USGS polygons](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_eligibility.png)
 
 **Result (default weights, default HLS thresholds, n_per_region = 3):**
 
@@ -267,12 +274,12 @@ A few choices in the pipeline are worth surfacing because they materially affect
 **Headline numbers:**
 
 - **23 total sites across 8 / 9 USGS regions.**
-- **Malapert Massif has zero HLS-compliant cells.** The polygon's terrain (per the LOLA + Mazarico + Diviner stack) does not contain a single 240 m cell that simultaneously satisfies slope ≤ 8°, distance ≥ 100 m to steeper cells, illumination ≥ 33 %, and DTE visibility ≥ 50 %. This is a real terrain-driven finding, not a thresholding artefact.
+- **Malapert Massif has zero HLS-compliant cells.** The polygon's terrain (per the LOLA + Mazarico + Diviner stack) does not contain a single 240 m cell that simultaneously satisfies slope ≤ 8°, distance ≥ 100 m to steeper cells, illumination ≥ 33 %, and DTE visibility ≥ 50 %. This is a real terrain-driven finding, consistent with NASA's selection presumably relying on higher-resolution NAC stereo DEMs to characterise this region.
 - **Mons Mouton Plateau** is the most "easy" region: 15.07 % of its polygon-cells satisfy every HLS filter (~671 km² of HLS-eligible area inside the 4452 km² polygon), and the best HLS-compliant site there scores **0.746** — the highest in the catalog.
 - **de Gerlache Rim 2** is the most constrained of the regions with sites: only 0.10 % of polygon cells (~0.4 km²) are HLS-eligible, and only 2 sites fit at the 2 km NMS separation.
 - Globally, **9.44 %** of the 240 m polar grid (~605 600 of 6.4 M cells) satisfies every HLS hard filter — most of that is outside any USGS polygon, on the polar rim band the v1.0–v1.2 engineering arc identified.
 
-The v1.3 sites are guaranteed inside USGS polygons and HLS-compliant by construction. The relevant scientific question — "do they identify the same cells NASA's process identifies?" — is addressable via direct comparison against **Wueller et al. 2026's 130 published sites**, planned for v1.4.
+The v1.3 sites are guaranteed inside USGS polygons and HLS-compliant by construction. The relevant scientific question — "do they identify the same cells NASA's process identifies?" — is addressable via direct comparison against **Wueller et al. 2026's 130 published sites**; v1.4.0 ships the comparison framework. See "Quantitative comparison against Wueller et al. 2026" below.
 
 ### Global-ranking validation (legacy, v1.0.0 — v1.2.0)
 
@@ -292,16 +299,16 @@ Three metrics for each top site:
 
 1. **Within X km of any centroid** (legacy week 4)
 2. **Inside any 15 km disk** (week 8)
-3. **Inside any USGS polygon** (week 10 — *headline*)
+3. **Inside any USGS polygon** (week 10 — *headline through v1.2.0*)
 
 And two for each USGS region:
 
 1. **Distance to nearest top-N site** — distance from the USGS polygon boundary to the closest selene-base candidate.
 2. **Contains a top-N site** — is at least one selene-base candidate inside the USGS polygon?
 
-![Score map with USGS polygons (red) and 15 km disks (grey, dashed) overlaid](docs/img/usgs_polygon_validation.png)
+![Score map with USGS polygons (red) and 15 km disks (grey, dashed) overlaid](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/usgs_polygon_validation.png)
 
-### Per-USGS-region results (week 10: 7-criterion + LOS-to-Earth, USGS polygons)
+### Per-USGS-region results (v1.2.0: 7-criterion + LOS-to-Earth, USGS polygons)
 
 | USGS region | code | area (km²) | nearest top site | distance to polygon (km) | contains a top site? |
 | --- | --- | ---: | --- | ---: | --- |
@@ -315,11 +322,11 @@ And two for each USGS region:
 | Mons Mouton | MM | 256.0 | site_01 | 118.7 | no |
 | Nobile Rim 2 | N2 | 400.0 | site_07 | 134.8 | no |
 
-The closest USGS polygon is **de Gerlache Rim 2 at 41.5 km** from `site_01` (-89.7°, +17.7°). The median distance to the nearest USGS polygon across the top-20 is **135.1 km**. Every top site sits outside every USGS polygon — the geometric separation persists against the authoritative reference.
+The closest USGS polygon is **de Gerlache Rim 2 at 41.5 km** from `site_01` (-89.7°, +17.7°). The median distance to the nearest USGS polygon across the top-20 is **135.1 km**. Every top site sits outside every USGS polygon under global ranking — the geometric separation persists against the authoritative reference. v1.3.0's per-region reframing resolves this by searching inside the polygons rather than globally.
 
-### Per-region results vs the 15 km disks (legacy, weeks 4-9)
+### Per-region results vs the 15 km disks (legacy, v1.0.0 — v1.1.0)
 
-The disk-based table is preserved for continuity with the v1.0.0 / v1.1.0 history; the headline metric is the USGS table above.
+The disk-based table is preserved for continuity with the v1.0.0 / v1.1.0 history; the v1.2 USGS table above is the authoritative metric.
 
 | NASA disk | nearest site | dist to centroid (km) | dist to disk edge (km) | inside disk? |
 | --- | --- | ---: | ---: | --- |
@@ -346,7 +353,7 @@ The disk-based "Cabeus B" entry shows a top site within 12.3 km of the disk edge
 
 The CLI prints a three-block stdout summary: headline counts, per-region agreement, notable disagreements. When the bundled CSV is the synthetic placeholder (current state), every output is explicitly labelled `*** SYNTHETIC PLACEHOLDER ACTIVE ***` so no downstream reader can mistake the number for a real scientific result.
 
-![selene-base v1.3 sites (yellow) vs Wueller 2026 sites (blue, placeholder run)](docs/img/selene_vs_wueller.png)
+![selene-base v1.3 sites (yellow) vs Wueller 2026 sites (blue, placeholder run)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
 
 ### Data acquisition status
 
@@ -373,23 +380,23 @@ The quantitative agreement headline is a v1.4.1 (or v1.5) follow-up, blocked onl
 
 Anyone reading 0/20 fairly asks: *is that just a function of the default weights?* Run `selene sensitivity --n-samples 200` to find out: it draws 200 weight vectors via Latin hypercube over the active-criteria simplex, runs `aggregate -> top_n_sites -> proximity_analysis` for each, and reports the distribution of "NASA regions matched within 25 km" alongside the default-weight result.
 
-![sensitivity over 200 weight samples](docs/img/sensitivity_distribution.png)
+![sensitivity over 200 weight samples](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/sensitivity_distribution.png)
 
-The 7-criterion sensitivity sweep is now run against **both** the legacy 15 km disks and the USGS polygons (week 10). Distribution across 200 weight samples:
+The 7-criterion sensitivity sweep is run against **both** the legacy 15 km disks and the USGS polygons (v1.2.0). Distribution across 200 weight samples:
 
 - **Centroid-distance metric (legacy)**: 157/200 samples (78.5 %) match 0 regions within 25 km of any centroid; 8/200 match 1, 16/200 match 2, 14/200 match 3, 5/200 match 4 — the sensitivity ceiling lifted from 3/9 in week 8 to 4/9 in weeks 9-10.
 - **Disk inside/outside (week 8 metric)**: 21/200 samples (10.5 %) put at least one top site *inside* a 15 km disk. Pre-week-9 (six criteria, no LOS) this was 0/200.
-- **USGS polygon inside/outside (week 10 metric, headline)**: **194 / 200 samples (97.0 %) put 0 sites inside any USGS polygon**; 5/200 (2.5 %) put 1 inside; 1/200 (0.5 %) puts 2 inside. **Best case across the sweep is 2 / 20 sites inside USGS polygons.** The minimum median-distance-to-nearest-USGS-polygon across the sweep is 41.2 km; the mean is 128 km.
+- **USGS polygon inside/outside (week 10 metric)**: **194 / 200 samples (97.0 %) put 0 sites inside any USGS polygon**; 5/200 (2.5 %) put 1 inside; 1/200 (0.5 %) puts 2 inside. **Best case across the sweep is 2 / 20 sites inside USGS polygons.** The minimum median-distance-to-nearest-USGS-polygon across the sweep is 41.2 km; the mean is 128 km.
 
-The best weight regime against the legacy centroid metric is `slope = 0.07, illumination = 0.24, coupling = 0.21, thermal = 0.00, ice = 0.16, hazard = 0.31, los_to_earth = 0.08` — every criterion contributes, and 4/9 NASA regions are now within 25 km of a top site. The default-weight headline against the **USGS polygons** is **0/20 inside any polygon, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2)**.
+The best weight regime against the legacy centroid metric is `slope = 0.07, illumination = 0.24, coupling = 0.21, thermal = 0.00, ice = 0.16, hazard = 0.31, los_to_earth = 0.08` — every criterion contributes, and 4/9 NASA regions are now within 25 km of a top site. The default-weight global-ranking headline against the **USGS polygons** is **0/20 inside any polygon, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2)**.
 
-The structural picture: against the legacy disk metric the geometric gap collapses for ~10 % of the weight simplex; against the authoritative USGS polygons it collapses for only ~3 % of the simplex (max 2/20 inside, never more). The disk approximations were systematically wrong — names, sizes, and one location (Slater Plain) were misplaced — but the *underlying geometric separation* between the model's rim-band optimum and NASA's authoritative regions persists across both validation references and across most of the weight simplex. The diagnostic comparison shows what the criteria are saying about that gap.
+The structural picture: against the legacy disk metric the geometric gap collapses for ~10 % of the weight simplex; against the authoritative USGS polygons it collapses for only ~3 % of the simplex (max 2/20 inside, never more). The disk approximations were systematically wrong — names, sizes, and one location (Slater Plain) were misplaced — but the *underlying geometric separation* between the model's rim-band optimum and NASA's authoritative regions persists across both validation references and across most of the weight simplex. The diagnostic comparison shows what the criteria are saying about that gap. v1.3.0 reframes the analysis to per-region ranking and resolves this by searching within the polygons.
 
 ## Diagnostic comparison
 
-Run `selene compare` to ask: *at NASA's centroids vs at our top-20, which criteria agree and which disagree?* The table is reordered below by signed delta — agreement first, disagreement last — because that's the actual structure of the result.
+Run `selene compare` to ask: *at NASA's centroids vs at our top-20 (global ranking), which criteria agree and which disagree?* The table is reordered below by signed delta — agreement first, disagreement last — because that's the actual structure of the result.
 
-![Per-criterion score: where we differ from NASA](docs/img/comparison.png)
+![Per-criterion score: where we differ from NASA](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/comparison.png)
 
 | criterion | our top-20 | NASA 9 centroids | delta | \|t\| | reads as |
 | --- | --- | --- | ---: | ---: | --- |
@@ -405,7 +412,7 @@ Run `selene compare` to ask: *at NASA's centroids vs at our top-20, which criter
 
 **LOS-to-Earth is the single most-bimodal NASA-side number.** Our top-20 score 1.000 ± 0.000 — every top site has Earth visibility above 50 % of the libration cycle, by construction of how the criterion ramps and how the rank picks. NASA centroids score 0.525 ± 0.505 — essentially uniform-bimodal: about half of NASA's centroids are deep enough inside their candidate craters to score 0 (Earth never above local horizon) and the other half are on rim-adjacent terrain that scores 1 (Earth always above local horizon at favorable libration). NASA's selection knowingly mixes sites with-and-without direct Earth comms because the actual landing footprints within each region target off-centroid rim cells with comms; the centroid point is just the geometric centre of the disk approximation, not necessarily the operational target. **Like the week 7 coupling number, the LOS comparison is partly diagnostic of the centroid-as-proxy issue.**
 
-**Coupling is still the most informative single number in the project.** *NASA centroids score exactly 0.000 ± 0.000 on coupling.* Our top-20 score 0.025 — small, but non-zero. The criterion is correctly identifying the rim band where PSR meets sunlit ridge at a 5 km coupling distance — and *neither site set sits on that band*. NASA's centroids are *inside* their candidate regions (a centroid of a 15 km disk is, by construction, in the middle of the disk, which means inside a crater for Cabeus B / Haworth, on a massif for Malapert, on a plain for Slater Plain), 5–15 km off the rim that the actual NASA landing footprints would target. **The 0.000 number is a discovery about the validation metric: distance to centroid is the wrong proxy for "match a NASA candidate region," because NASA's preferred landing sites within each region are off-centroid by construction.** Week 8 added the polygon-inside metric specifically to test this — and even with that primitive plus the week-9 LOS criterion, the default-weights answer is still 0/20, because the rim band is geometrically *outside* the disks for the operations-driven default weights even when the right primitive is used.
+**Coupling is still the most informative single number in the project.** *NASA centroids score exactly 0.000 ± 0.000 on coupling.* Our top-20 score 0.025 — small, but non-zero. The criterion is correctly identifying the rim band where PSR meets sunlit ridge at a 5 km coupling distance — and *neither site set sits on that band*. NASA's centroids are *inside* their candidate regions (a centroid of a 15 km disk is, by construction, in the middle of the disk, which means inside a crater for Cabeus B / Haworth, on a massif for Malapert, on a plain for Slater Plain), 5–15 km off the rim that the actual NASA landing footprints would target. **The 0.000 number is a discovery about the validation metric: distance to centroid is the wrong proxy for "match a NASA candidate region," because NASA's preferred landing sites within each region are off-centroid by construction.** Week 8 added the polygon-inside metric specifically to test this — and even with that primitive plus the week-9 LOS criterion, the default-weights global-ranking answer is still 0/20, because the rim band is geometrically *outside* the disks for the operations-driven default weights even when the right primitive is used. v1.3.0's per-region reframing resolves this by searching inside the polygons.
 
 **Slope and illumination remain the major disagreement** because the linear-sum aggregator cannot represent the *spatial coupling* between them — the methodology finding from week 6 still holds. The week 7 coupling criterion captures the conjunction directly (the product is the AND), but with only 0.18 default weight it cannot dominate the linear sum across the other six criteria. Pushing coupling weight higher would require either changing the default or — more architecturally honest — switching the aggregator itself to TOPSIS, which penalises lop-sided profiles globally rather than at one specific spatial coupling.
 
@@ -418,11 +425,13 @@ selene-base/
 ├── src/selene_base/
 │   ├── data/                # download + load + reproject + rasterize
 │   ├── criteria/            # seven [0,1] scoring functions
-│   ├── scoring/             # normalize, aggregate (renormalising), ranking (NMS)
-│   ├── validation/          # NASA candidate regions + proximity_analysis
+│   ├── scoring/             # normalize, aggregate (renormalising), ranking (NMS, per-region)
+│   ├── validation/          # NASA candidate regions + proximity_analysis + Wueller comparison
 │   ├── viz/                 # folium webmap + per-site HTML reports
 │   ├── pipeline/            # one orchestrator module per CLI subcommand
-│   └── cli.py               # typer CLI: download, preprocess, score, rank, validate, viz
+│   └── cli.py               # typer CLI: download, preprocess, score, rank, rank-per-region,
+│                            #            validate, validate-per-region, viz, compare,
+│                            #            sensitivity, coupling-sweep, compare-wueller
 ├── config/                  # region_southpole.yaml, weights_default.yaml
 ├── data/                    # raw/ processed/ outputs/ (all gitignored)
 ├── notebooks/               # jupytext .py scripts; one per week
@@ -432,22 +441,22 @@ selene-base/
 
 The dependency graph is one-way: `data/` is the foundation; `criteria/` reads loaded rasters; `scoring/` aggregates criterion outputs; `validation/` and `viz/` consume scoring outputs; `pipeline/` orchestrates; `cli.py` exposes the orchestrators. Tests follow the same layering.
 
-348 tests (16 new synthetic + 2 explicitly skipped pending the Wueller 2026 data release in v1.4.0), ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank -> validate -> compare`, and asserts every output file is on disk and schema-valid.
+**343 tests collected** (337 passed, 6 skipped: 4 LEND-data-not-present, 2 awaiting Wueller 2026 data release), ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank-per-region -> validate-per-region -> compare`, and asserts every output file is on disk and schema-valid.
 
 ## Roadmap
 
-- **Week 1 — data acquisition.** ✅ `selene download` for Robbins, LOLA, Mazarico illumination; Diviner / LEND / scarps URLs flagged.
-- **Week 2 — common grid + slope criterion.** ✅ `reproject_to_grid`, COG cache, slope criterion end-to-end on real data.
-- **Week 3 — full scoring + ranking.** ✅ All six criteria (3 on real data, 3 skip cleanly), KDTree crater density, NMS top-N extraction.
-- **Week 4 — validation + visualisation.** ✅ NASA Artemis III proximity comparison, interactive folium web map, per-site HTML reports, validated v0.1.
-- **Week 5 — robustness, diagnostic, sample data.** ✅ Latin-hypercube weight-sensitivity sweep, per-criterion `selene compare` diagnostic, bundled ~12 MB sample tarball, CI pipeline smoke test on the sample.
-- **Week 6 — Diviner Polar Resource Product integration.** ✅ PDS4 character-table parser, triangle-mesh-to-grid rasteriser, three new score grids (`temp_avg`, `temp_max`, `ice_depth`) on the common 240 m grid, thermal+ice criteria switched to PRP defaults. Five of six criteria now run on real data. Validation rerun *surfaced the methodology finding*: linear-sum MCDA can't model NASA's spatial-coupling constraint regardless of which criteria are summed.
-- **Week 7 — spatial-coupling criterion.** ✅ `criteria/coupling.py` scores cells by joint proximity to a PSR and a sunlit ridge via a multiplicative product of two distance falloffs, encoding the AND that linear-sum aggregation cannot. `selene coupling-sweep` tunes the single `coupling_distance_km` knob across 1–20 km. The fix lifted the sensitivity ceiling from 2/9 -> 3/9 region matches and improved closest-distance from 64.8 km -> 47.8 km, but did not break the 25 km threshold. The diagnostic surfaced the project's sharpest finding: **NASA centroids score 0.000 on coupling** — meaning the validation metric (distance to disk centroid) is itself misaligned with NASA's selection logic. NASA's preferred landing footprints within each region are off-centroid by 5–15 km by construction.
-- **Week 8 — closing chapter: polygon validation, thermal correction, engineering decisions.** ✅ Three changes, all driven by week 7's diagnostic. (1) `validation/comparison.py` now computes polygon-inside metrics alongside the legacy centroid-distance metrics — `sites_inside_any_region`, `regions_containing_top_site`, `regions_with_top_site_within_disk_radius`, plus signed `distance_to_edge_km` per site/region. The polygon primitive doesn't move the headline (0/20 sites inside any disk; closest edge 32.8 km) — informative on its own, since it shows the rim band the model identifies is geometrically distinct from NASA's centroid disks regardless of which proximity primitive you choose. (2) Thermal default corrected: `target_temp_k` 230 -> 140, `sigma_k` 50 -> 30. The previous values placed the Gaussian peak *outside* the data support (PRP `temp_avg` peaks at 211 K, median 131 K), so every cell scored in the tail. With the correction, our top-20 thermal mean rises 0.325 -> 0.965 and NASA centroids 0.113 -> 0.526; the criterion contributes discriminative signal again, and the sensitivity ceiling broadens from 1/200 to 11/200 weight regimes hitting 3/9 region matches. (3) New "Engineering decisions" section documenting the seven non-obvious choices.
-- **Week 9 — Earth line-of-sight criterion.** ✅ `criteria/los_to_earth.py` adds the seventh criterion: a per-pixel Earth-visibility fraction derived from a 36-azimuth, log-spaced 50-distance horizon ray-march on the LOLA elevation grid (with curvature correction for $R = 1737.4\,$km), combined with 24-sample libration-cycle sampling of Earth's sub-Earth point on a $\pm6.5°\times\pm7.9°$ ellipse. Score is a linear ramp from `min_visibility = 0.20` (Apollo crew-safety floor) to `target_visibility = 0.50` (sustained-habitat target). Default weight 0.15 — chosen *before* the validation rerun on physics-and-operations grounds, not validation chasing. Effect: closest-disk-edge dropped from 32.8 km → **12.3 km** (Cabeus B, the first NASA region to come within 1 disk-radius of a top site), sensitivity ceiling lifted 3/9 → **4/9** regions matched, and the polygon-inside count became sample-non-zero for the first time (**21/200 weight regimes** now produce ≥1 inside any disk; 0/200 in week 8). Headline polygon-inside under defaults: still **0/20** — the operations-driven defaults narrow the gap but don't close it. The geometric finding from weeks 7-8 holds: under physics-driven defaults, our model picks the polar rim band where every criterion (now including LOS) is near-saturated, and NASA's centroids are inside the disks 5–15 km off that band; the gap collapses for ~10 % of the weight simplex.
-- **Week 10 — USGS authoritative polygon validation (v1.2.0).** ✅ Replaced the 15 km disk approximations with USGS's officially-published simplified region envelopes (DOI 10.5066/P1MEQ6UK, McClernan 2024). The polygons ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson). `selene validate` now prints three result tables (centroid distance, 15 km disk inside/outside, USGS polygon inside/outside) and `validation.json` carries all three metric families. The disk approximations were systematically wrong: most regions are ~400 km² quadrilaterals (vs the 707 km² disk), Mons Mouton Plateau is **4452 km² — 6× the disk area**, one disk centroid for "Slater Plain" sits ~180° away from the USGS polygon's actual location, and "Cabeus B" was misnamed (USGS publishes "Peak Near Cabeus B", centred on the rim peak, not the crater floor). **Default-weights result against USGS polygons: 0/20 inside, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2). Sensitivity sweep: 6/200 weight regimes produce ≥1 site inside any USGS polygon (max 2/20), down from 21/200 against the disks** — the geometric separation is *more* pronounced against the right validation reference, not less, because the disks were inflated outward in places where the actual USGS polygons are not. The "validation metric was the bottleneck" hypothesis from v1.0.0 was *partially* correct (the disk approximations were wrong) but the *underlying* geometric separation between the model's rim-band optimum and NASA's authoritative regions persists.
-- **Week 11 — per-region ranking with NASA HLS hard filters (v1.3.0).** ✅ `selene rank-per-region` searches *within* each USGS polygon and applies NASA's published HLS thresholds (slope ≤ 8°, 100 m buffer, illumination ≥ 33 %, DTE visibility ≥ 50 %) as a precondition before ranking by suitability score. New `top_n_sites_per_region` in [`scoring/ranking.py`](src/selene_base/scoring/ranking.py); new `per_region_compliance_analysis` in [`validation/comparison.py`](src/selene_base/validation/comparison.py); new CLI subcommands `rank-per-region` and `validate-per-region`. **Result: 23 sites across 8/9 USGS regions** (default weights, default HLS thresholds), all guaranteed inside their named polygon and HLS-compliant by construction. **Malapert Massif has zero HLS-compliant cells** — a real terrain-driven finding, not a thresholding artefact. **Mons Mouton Plateau is the highest-scoring region** (best score 0.746, 15.07 % HLS-eligible area). The reframing — global ranking → per-region + HLS — matches the methodology of Wueller et al. 2026 (JGR Planets), which catalogued 130 candidate Artemis-III sites with the same outer framing. The 0/20 inside-polygon count through v1.2.0 reflected the global framing; v1.3.0 produces the NASA-aligned catalog v1.0–v1.2 had been pursuing through the wrong question.
-- **Week 12 — Wueller 2026 comparison framework (v1.4.0, framework only).** ✅ Comparison harness shipped: `selene compare-wueller` plus `wueller_comparison.{load_wueller_sites,compare_sites,render_summary}`, 16 synthetic-only tests, the `notebooks/08_wueller_comparison.py` visualisation set, and the headline plot at [docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png). The Wueller 2026 supplementary catalog is currently gated behind AGU/Wiley and no open data release surfaced in search; the bundled CSV is a clearly-labelled 5-row synthetic placeholder, every output is flagged `using_synthetic_placeholder = true` until the real CSV ships, and two "real comparison" tests are explicitly skipped with `reason="awaiting upstream data"`. **The framework is the v1.4.0 deliverable; the quantitative agreement number is a v1.4.1/v1.5 follow-up unblocked the moment the real Table A1 is in hand.** See README §"Data acquisition status" for the search trail.
+- **v0.1 (week 1) — data acquisition.** ✅ `selene download` for Robbins, LOLA, Mazarico illumination; Diviner / LEND / scarps URLs flagged.
+- **v0.2 (week 2) — common grid + slope criterion.** ✅ `reproject_to_grid`, COG cache, slope criterion end-to-end on real data.
+- **v0.3 (week 3) — full scoring + ranking.** ✅ All six criteria (3 on real data, 3 skip cleanly), KDTree crater density, NMS top-N extraction.
+- **v0.4 (week 4) — validation + visualisation.** ✅ NASA Artemis III proximity comparison, interactive folium web map, per-site HTML reports.
+- **v0.5 (week 5) — robustness, diagnostic, sample data.** ✅ Latin-hypercube weight-sensitivity sweep, per-criterion `selene compare` diagnostic, bundled ~12 MB sample tarball, CI pipeline smoke test on the sample.
+- **v0.6 (week 6) — Diviner Polar Resource Product integration.** ✅ PDS4 character-table parser, triangle-mesh-to-grid rasteriser, three new score grids (`temp_avg`, `temp_max`, `ice_depth`) on the common 240 m grid, thermal+ice criteria switched to PRP defaults. Five of six criteria now run on real data. Validation rerun *surfaced the methodology finding*: linear-sum MCDA can't model NASA's spatial-coupling constraint regardless of which criteria are summed.
+- **v0.7 (week 7) — spatial-coupling criterion.** ✅ `criteria/coupling.py` scores cells by joint proximity to a PSR and a sunlit ridge via a multiplicative product of two distance falloffs, encoding the AND that linear-sum aggregation cannot. `selene coupling-sweep` tunes the single `coupling_distance_km` knob across 1–20 km. The fix lifted the sensitivity ceiling from 2/9 -> 3/9 region matches and improved closest-distance from 64.8 km -> 47.8 km, but did not break the 25 km threshold. The diagnostic surfaced the project's sharpest finding: **NASA centroids score 0.000 on coupling** — meaning the validation metric (distance to disk centroid) is itself misaligned with NASA's selection logic. NASA's preferred landing footprints within each region are off-centroid by 5–15 km by construction.
+- **v1.0.0 (week 8) — closing chapter: polygon validation, thermal correction, engineering decisions.** ✅ Three changes, all driven by week 7's diagnostic. (1) `validation/comparison.py` now computes polygon-inside metrics alongside the legacy centroid-distance metrics — `sites_inside_any_region`, `regions_containing_top_site`, `regions_with_top_site_within_disk_radius`, plus signed `distance_to_edge_km` per site/region. The polygon primitive doesn't move the headline (0/20 sites inside any disk; closest edge 32.8 km) — informative on its own, since it shows the rim band the model identifies is geometrically distinct from NASA's centroid disks regardless of which proximity primitive you choose. (2) Thermal default corrected: `target_temp_k` 230 -> 140, `sigma_k` 50 -> 30. The previous values placed the Gaussian peak *outside* the data support (PRP `temp_avg` peaks at 211 K, median 131 K), so every cell scored in the tail. With the correction, our top-20 thermal mean rises 0.325 -> 0.965 and NASA centroids 0.113 -> 0.526; the criterion contributes discriminative signal again, and the sensitivity ceiling broadens from 1/200 to 11/200 weight regimes hitting 3/9 region matches. (3) New "Engineering decisions" section documenting the seven non-obvious choices.
+- **v1.1.0 (week 9) — Earth line-of-sight criterion.** ✅ `criteria/los_to_earth.py` adds the seventh criterion: a per-pixel Earth-visibility fraction derived from a 36-azimuth, log-spaced 50-distance horizon ray-march on the LOLA elevation grid (with curvature correction for $R = 1737.4\,$km), combined with 24-sample libration-cycle sampling of Earth's sub-Earth point on a $\pm6.5°\times\pm7.9°$ ellipse. Score is a linear ramp from `min_visibility = 0.20` (Apollo crew-safety floor) to `target_visibility = 0.50` (sustained-habitat target). Default weight 0.15 — chosen *before* the validation rerun on physics-and-operations grounds, not validation chasing. Effect: closest-disk-edge dropped from 32.8 km → **12.3 km** (Cabeus B, the first NASA region to come within 1 disk-radius of a top site), sensitivity ceiling lifted 3/9 → **4/9** regions matched, and the polygon-inside count became sample-non-zero for the first time (**21/200 weight regimes** now produce ≥1 inside any disk; 0/200 in week 8). Headline polygon-inside under defaults: still **0/20** — the operations-driven defaults narrow the gap but don't close it. The geometric finding from weeks 7-8 holds: under physics-driven defaults, our model picks the polar rim band where every criterion (now including LOS) is near-saturated, and NASA's centroids are inside the disks 5–15 km off that band; the gap collapses for ~10 % of the weight simplex.
+- **v1.2.0 (week 10) — USGS authoritative polygon validation.** ✅ Replaced the 15 km disk approximations with USGS's officially-published simplified region envelopes (DOI 10.5066/P1MEQ6UK, McClernan 2024). The polygons ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson). `selene validate` now prints three result tables (centroid distance, 15 km disk inside/outside, USGS polygon inside/outside) and `validation.json` carries all three metric families. The disk approximations were systematically wrong: most regions are ~400 km² quadrilaterals (vs the 707 km² disk), Mons Mouton Plateau is **4452 km² — 6× the disk area**, one disk centroid for "Slater Plain" sits ~180° away from the USGS polygon's actual location, and "Cabeus B" was misnamed (USGS publishes "Peak Near Cabeus B", centred on the rim peak, not the crater floor). **Default-weights result against USGS polygons: 0/20 inside, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2). Sensitivity sweep: 6/200 weight regimes produce ≥1 site inside any USGS polygon (max 2/20), down from 21/200 against the disks** — the geometric separation is *more* pronounced against the right validation reference, not less, because the disks were inflated outward in places where the actual USGS polygons are not. The "validation metric was the bottleneck" hypothesis from v1.0.0 was *partially* correct (the disk approximations were wrong) but the *underlying* geometric separation between the model's rim-band optimum and NASA's authoritative regions persists.
+- **v1.3.0 (week 11) — per-region ranking with NASA HLS hard filters.** ✅ `selene rank-per-region` searches *within* each USGS polygon and applies NASA's published HLS thresholds (slope ≤ 8°, 100 m buffer, illumination ≥ 33 %, DTE visibility ≥ 50 %) as a precondition before ranking by suitability score. New `top_n_sites_per_region` in [`scoring/ranking.py`](src/selene_base/scoring/ranking.py); new `per_region_compliance_analysis` in [`validation/comparison.py`](src/selene_base/validation/comparison.py); new CLI subcommands `rank-per-region` and `validate-per-region`. **Result: 23 sites across 8/9 USGS regions** (default weights, default HLS thresholds), all guaranteed inside their named polygon and HLS-compliant by construction. **Malapert Massif has zero HLS-compliant cells** — a real terrain-driven finding, not a thresholding artefact. **Mons Mouton Plateau is the highest-scoring region** (best score 0.746, 15.07 % HLS-eligible area). The reframing — global ranking → per-region + HLS — matches the methodology of Wueller et al. 2026 (JGR Planets), which catalogued 130 candidate Artemis-III sites with the same outer framing. The 0/20 inside-polygon count through v1.2.0 reflected the global framing; v1.3.0 produces the NASA-aligned catalog v1.0–v1.2 had been pursuing through the wrong question.
+- **v1.4.0 (week 12) — Wueller 2026 comparison framework (framework only).** ✅ Comparison harness shipped: `selene compare-wueller` plus `wueller_comparison.{load_wueller_sites,compare_sites,render_summary}`, 16 synthetic-only tests, the `notebooks/08_wueller_comparison.py` visualisation set, and the headline plot at [docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png). The Wueller 2026 supplementary catalog is currently gated behind AGU/Wiley and no open data release surfaced in search; the bundled CSV is a clearly-labelled 5-row synthetic placeholder, every output is flagged `using_synthetic_placeholder = true` until the real CSV ships, and two "real comparison" tests are explicitly skipped with `reason="awaiting upstream data"`. **The framework is the v1.4.0 deliverable; the quantitative agreement number is a v1.4.1/v1.5 follow-up unblocked the moment the real Table A1 is in hand.** See README §"Data acquisition status" for the search trail.
 
 ### Where this goes next
 
@@ -477,10 +486,6 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - Gracy, S., & Lee, P. (2024). *Update on the Artemis III Reference Mission and Candidate Landing Region Selection.* 55th Lunar and Planetary Science Conference, Abstract #1695. (Source for the four published HLS hard-constraint thresholds used by v1.3.0's `rank-per-region` — slope, slope-buffer, illumination, DTE visibility.)
 - Wueller, F., et al. (2026). *Assessing Potential Landing Sites With Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions Within Artemis Candidate Landing Regions.* Journal of Geophysical Research: Planets, 131. [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434). (Peer-reviewed parallel: 130 candidate Artemis III landing sites identified by within-region selection with NASA HLS hard filters. v1.3.0's `rank-per-region` mirrors the outer framing; v1.4.0 ships the comparison framework against this catalog with a synthetic-placeholder CSV until the gated supplementary data release is acquired — see README §"Data acquisition status".)
 - NASA (2019). *Human Landing System Requirements Document.* (Underlying source for the HLS slope, slope-buffer, illumination, and DTE-visibility thresholds.)
-
-## Notes for the reader
-
-The interactive web map (`data/outputs/webmap.html` after `selene viz`) is built with folium / Leaflet and pulls Leaflet's JS and CSS from a CDN — so it needs an internet connection on first open. Everything else (the score raster, polygons, popups, per-site reports) is inlined and works offline. Per-site HTML reports under `data/outputs/sites/` are fully self-contained.
 
 ## License
 
