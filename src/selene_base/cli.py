@@ -15,6 +15,7 @@ import typer
 
 from selene_base.data import download as _download
 from selene_base.pipeline import compare as _compare
+from selene_base.pipeline import compare_wueller as _compare_wueller
 from selene_base.pipeline import coupling_sweep as _coupling_sweep
 from selene_base.pipeline import preprocess as _preprocess
 from selene_base.pipeline import rank as _rank
@@ -267,6 +268,58 @@ def rank_per_region(
         outputs_dir=outputs_dir,
         n_per_region=n_per_region,
         min_distance_km=min_distance_km,
+    )
+
+
+@app.command(name="compare-wueller")
+def compare_wueller(
+    match_threshold_km: float = typer.Option(
+        5.0,
+        "--match-threshold-km",
+        help=(
+            "Distance below which a (selene, Wueller) pair is marked "
+            "'matched'. Default 5 km — the upper end of typical regional "
+            "candidate-site granularity. Not tuned from the agreement "
+            "result."
+        ),
+    ),
+    sites: Path | None = typer.Option(
+        None,
+        "--sites",
+        help="selene per-region sites GeoJSON. Defaults to data/outputs/per_region/sites.geojson.",
+        dir_okay=False,
+    ),
+    wueller_csv: Path | None = typer.Option(
+        None,
+        "--wueller-csv",
+        help=(
+            "Wueller 2026 site CSV. Defaults to the bundled "
+            "src/selene_base/validation/data/wueller_2026_sites.csv. The "
+            "shipped file is a synthetic 5-row placeholder until the "
+            "real data release is acquired; the CLI auto-detects this "
+            "and labels the output as not a real scientific result."
+        ),
+        dir_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory under which wueller_comparison.{json,csv} are written.",
+        file_okay=False,
+    ),
+) -> None:
+    """Compare selene-base per-region sites against Wueller et al. 2026.
+
+    The comparison **framework** is the v1.4.0 deliverable; the
+    quantitative agreement number is gated on acquiring the gated
+    Wueller 2026 data release. See README §"Data acquisition status"
+    for the search trail and path forward.
+    """
+    _compare_wueller.run(
+        selene_sites_path=sites,
+        wueller_csv=wueller_csv,
+        outputs_dir=outputs_dir,
+        match_threshold_km=match_threshold_km,
     )
 
 

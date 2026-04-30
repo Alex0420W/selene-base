@@ -1,0 +1,32 @@
+# SYNTHETIC PLACEHOLDER — NOT REAL WUELLER 2026 DATA
+#
+# These five rows are obviously-fabricated stand-ins so the
+# selene compare-wueller comparison harness has a non-empty input to
+# exercise. Every site_id is prefixed "synthetic-placeholder-"; do
+# NOT cite or interpret these coordinates as Wueller 2026 results.
+#
+# Real source (intended): Wueller, F., et al. (2026). "Assessing
+# Potential Landing Sites With Favorable Illumination and Accessible,
+# Potentially Volatile-Rich Permanently Shadowed Regions Within Artemis
+# Candidate Landing Regions." Journal of Geophysical Research: Planets,
+# doi:10.1029/2025JE009434. Site coordinates appear in Table A1 of the
+# paper; the AGU/Wiley publication is currently gated and no open
+# supplementary data release has been located. See README §"Data
+# acquisition status" for the search trail and the path forward.
+#
+# When the real Table A1 / data release becomes available, replace
+# this file in place (preserve the column schema below). The
+# selene compare-wueller CLI auto-detects the synthetic placeholder
+# via the site_id prefix and prints a "synthetic placeholder; not a
+# real scientific result" notice in that case.
+#
+# Column schema (planetocentric lat/lon on R = 1737.4 km lunar sphere,
+# matching the USGS polygons CRS shipped at
+# src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson):
+#   wueller_site_id,region,lat,lon
+wueller_site_id,region,lat,lon
+synthetic-placeholder-1,Mons Mouton Plateau,-84.5,30.0
+synthetic-placeholder-2,Haworth,-86.8,-25.0
+synthetic-placeholder-3,Nobile Rim 1,-85.5,37.0
+synthetic-placeholder-4,Peak Near Cabeus B,-83.7,-68.0
+synthetic-placeholder-5,de Gerlache Rim 2,-88.2,-62.0
