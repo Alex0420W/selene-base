@@ -18,9 +18,11 @@ from selene_base.pipeline import compare as _compare
 from selene_base.pipeline import coupling_sweep as _coupling_sweep
 from selene_base.pipeline import preprocess as _preprocess
 from selene_base.pipeline import rank as _rank
+from selene_base.pipeline import rank_per_region as _rank_per_region
 from selene_base.pipeline import score as _score
 from selene_base.pipeline import sensitivity as _sensitivity
 from selene_base.pipeline import validate as _validate
+from selene_base.pipeline import validate_per_region as _validate_per_region
 from selene_base.pipeline import viz as _viz_pipeline
 
 app = typer.Typer(
@@ -217,6 +219,73 @@ def rank(
         min_distance_km=min_distance_km,
         min_score=min_score,
     )
+
+
+@app.command(name="rank-per-region")
+def rank_per_region(
+    n_per_region: int = typer.Option(
+        3,
+        "--n-per-region",
+        min=1,
+        help="Maximum number of HLS-compliant sites to extract per USGS region.",
+    ),
+    min_distance_km: float = typer.Option(
+        2.0,
+        "--min-distance-km",
+        help="Minimum pairwise distance between sites within the same region (km).",
+    ),
+    score_map: Path | None = typer.Option(
+        None,
+        "--score-map",
+        help="Aggregate score COG. Defaults to <outputs-dir>/score_southpole.tif.",
+        dir_okay=False,
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding the slope, illumination, and LOS COGs.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory under which the per_region/ subdirectory is written.",
+        file_okay=False,
+    ),
+) -> None:
+    """Rank top-N HLS-compliant sites *within each USGS region*.
+
+    Applies NASA's published HLS hard filters (slope ≤ 8°, 100 m
+    buffer, illumination ≥ 33 %, DTE visibility ≥ 50 %) inside every
+    USGS-published Artemis III polygon, then ranks the survivors by
+    aggregate score. Sites are guaranteed inside their named polygon
+    by construction.
+    """
+    _rank_per_region.run(
+        score_map_path=score_map,
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+        n_per_region=n_per_region,
+        min_distance_km=min_distance_km,
+    )
+
+
+@app.command(name="validate-per-region")
+def validate_per_region(
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help="Directory containing the per_region/ artefacts.",
+        file_okay=False,
+    ),
+) -> None:
+    """Summarise the per-region HLS-compliant ranking against USGS polygons.
+
+    Reads ``data/outputs/per_region/sites.geojson`` and the cached
+    summary JSON from ``selene rank-per-region``, prints a per-region
+    table, and writes ``per_region_validation.json``.
+    """
+    _validate_per_region.run(outputs_dir=outputs_dir)
 
 
 @app.command()

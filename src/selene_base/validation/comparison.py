@@ -384,6 +384,148 @@ def proximity_analysis(
     return result
 
 
+class PerRegionComplianceEntry(TypedDict):
+    name: str
+    code: str
+    n_sites: int
+    best_score: float  # NaN when no sites in this region
+    mean_score: float  # NaN when no sites in this region
+    best_site_id: int  # 0 when no sites
+    eligible_area_fraction: float  # 0.0 when no eligibility info supplied
+
+
+class PerRegionComplianceResult(TypedDict, total=False):
+    n_sites_total: int
+    n_regions_total: int
+    n_regions_with_sites: int
+    n_regions_with_no_compliant_cells: int
+    regions_with_no_compliant_cells: list[str]
+    per_region: list[PerRegionComplianceEntry]
+
+
+def per_region_compliance_analysis(
+    per_region_sites: gpd.GeoDataFrame,
+    nasa_regions_polygons: gpd.GeoDataFrame,
+    *,
+    eligible_area_km2: dict[str, float] | None = None,
+    polygon_area_km2: dict[str, float] | None = None,
+) -> PerRegionComplianceResult:
+    """Summarise the per-region site selection from
+    :func:`selene_base.scoring.ranking.top_n_sites_per_region`.
+
+    For each USGS region polygon, this counts how many sites the
+    per-region ranker placed in it, the best/mean score among those
+    sites, and (optionally) the fraction of cells inside the polygon
+    that passed every NASA HLS hard filter. Regions that had zero
+    compliant cells are reported separately so the result makes the
+    HLS-disqualification finding explicit.
+
+    Args:
+        per_region_sites: GeoDataFrame from
+            :func:`top_n_sites_per_region`, with at minimum ``site_id``,
+            ``region_name``, ``region_code``, and ``score`` columns.
+        nasa_regions_polygons: GeoDataFrame from
+            :func:`selene_base.validation.nasa_regions.regions_polygons_to_geodataframe`.
+        eligible_area_km2: Optional mapping from region name to the
+            HLS-eligible-cells area within that region (km²). When
+            provided alongside ``polygon_area_km2``, the per-region
+            entry's ``eligible_area_fraction`` is populated.
+        polygon_area_km2: Optional mapping from region name to the
+            total polygon area (km²). Defaults to the ``Area_km2``
+            column of ``nasa_regions_polygons`` if present.
+
+    Returns:
+        A :class:`PerRegionComplianceResult` dict with one entry per
+        polygon, in the same order as ``nasa_regions_polygons``.
+    """
+    if polygon_area_km2 is None and "Area_km2" in nasa_regions_polygons.columns:
+        polygon_area_km2 = {
+            str(row["Region"]): float(row["Area_km2"])
+            for _, row in nasa_regions_polygons.iterrows()
+        }
+    polygon_area_km2 = polygon_area_km2 or {}
+    eligible_area_km2 = eligible_area_km2 or {}
+
+    per_region: list[PerRegionComplianceEntry] = []
+    regions_with_no_compliant_cells: list[str] = []
+
+    for _, region in nasa_regions_polygons.iterrows():
+        name = str(region.get("Region", region.get("name", "?")))
+        code = str(region.get("RegionCode", region.get("code", "")))
+        sites_here = per_region_sites[per_region_sites["region_name"] == name]
+        n_sites = int(len(sites_here))
+
+        if n_sites > 0:
+            best_score = float(sites_here["score"].max())
+            mean_score = float(sites_here["score"].mean())
+            best_site_id = int(sites_here.loc[sites_here["score"].idxmax(), "site_id"])
+        else:
+            best_score = float("nan")
+            mean_score = float("nan")
+            best_site_id = 0
+            regions_with_no_compliant_cells.append(name)
+
+        eligible_km2 = float(eligible_area_km2.get(name, 0.0))
+        polygon_km2 = float(polygon_area_km2.get(name, 0.0))
+        if polygon_km2 > 0 and name in eligible_area_km2:
+            fraction = eligible_km2 / polygon_km2
+        else:
+            fraction = 0.0
+
+        per_region.append(
+            {
+                "name": name,
+                "code": code,
+                "n_sites": n_sites,
+                "best_score": best_score,
+                "mean_score": mean_score,
+                "best_site_id": best_site_id,
+                "eligible_area_fraction": float(fraction),
+            }
+        )
+
+    return {
+        "n_sites_total": int(len(per_region_sites)),
+        "n_regions_total": int(len(nasa_regions_polygons)),
+        "n_regions_with_sites": sum(1 for entry in per_region if entry["n_sites"] > 0),
+        "n_regions_with_no_compliant_cells": len(regions_with_no_compliant_cells),
+        "regions_with_no_compliant_cells": regions_with_no_compliant_cells,
+        "per_region": per_region,
+    }
+
+
+def render_per_region_compliance_summary(result: PerRegionComplianceResult) -> str:
+    """Stdout-ready summary table for ``selene validate-per-region``."""
+    lines: list[str] = []
+    lines.append(
+        f"per-region HLS-compliant ranking: "
+        f"{result['n_sites_total']} total sites across "
+        f"{result['n_regions_with_sites']} / {result['n_regions_total']} regions"
+    )
+    if result["regions_with_no_compliant_cells"]:
+        lines.append(
+            "  regions with zero HLS-compliant cells: "
+            f"{', '.join(result['regions_with_no_compliant_cells'])}"
+        )
+    lines.append("")
+    has_eligible = any(entry["eligible_area_fraction"] > 0 for entry in result["per_region"])
+    header_eligible = " eligible_pct" if has_eligible else ""
+    lines.append(f"{'region':<22} {'code':<4} {'n':>3} {'best':>6} {'mean':>6}{header_eligible}")
+    for entry in result["per_region"]:
+        n = entry["n_sites"]
+        best = entry["best_score"]
+        mean = entry["mean_score"]
+        best_str = f"{best:>6.3f}" if n > 0 else "    --"
+        mean_str = f"{mean:>6.3f}" if n > 0 else "    --"
+        eligible_str = ""
+        if has_eligible:
+            eligible_str = f" {entry['eligible_area_fraction'] * 100:>10.2f}%"
+        lines.append(
+            f"{entry['name']:<22} {entry['code']:<4} {n:>3} {best_str} {mean_str}{eligible_str}"
+        )
+    return "\n".join(lines)
+
+
 def render_summary(result: ProximityResult) -> str:
     """Three-table stdout block for ``selene validate``.
 
