@@ -92,6 +92,7 @@ def sweep_weights(
     far_threshold_km: float = DEFAULT_FAR_KM,
     min_score: float = 0.0,
     criterion_order: list[str] | None = None,
+    nasa_regions_polygons: gpd.GeoDataFrame | None = None,
 ) -> pd.DataFrame:
     """Run aggregate → top-N → proximity for each weight sample.
 
@@ -189,7 +190,12 @@ def sweep_weights(
             min_score=min_score,
         )
         if len(sites) > 0:
-            prox = proximity_analysis(sites, nasa_regions, near_km=proximity_threshold_km)
+            prox = proximity_analysis(
+                sites,
+                nasa_regions,
+                near_km=proximity_threshold_km,
+                nasa_regions_polygons=nasa_regions_polygons,
+            )
             far_prox = proximity_analysis(sites, nasa_regions, near_km=far_threshold_km)
             # The dict field name carries "25km" historically; the analysis
             # is parameterised by near_km so it really means "within
@@ -230,6 +236,13 @@ def sweep_weights(
                 "n_regions_within_proximity_km": int(n_regions_within),
                 "mean_score_at_nasa_centroids": mean_centroid_score,
                 "mean_top_n_score": mean_top_n,
+                "n_inside_usgs_polygon": int(prox.get("sites_inside_any_usgs_polygon", 0)),
+                "n_usgs_regions_with_top_site": int(
+                    prox.get("regions_with_top_site_inside_usgs_polygon", 0)
+                ),
+                "median_distance_to_nearest_usgs_polygon_km": float(
+                    prox.get("median_distance_to_nearest_usgs_polygon_km", float("nan"))
+                ),
             }
         )
         rows.append(row)

@@ -18,7 +18,10 @@ import typer
 import yaml
 
 from selene_base.scoring.ranking import DEFAULT_CRITERIA, load_sub_scores
-from selene_base.validation.nasa_regions import regions_to_geodataframe
+from selene_base.validation.nasa_regions import (
+    regions_polygons_to_geodataframe,
+    regions_to_geodataframe,
+)
 from selene_base.validation.sensitivity import (
     best_weights,
     latin_hypercube_weights,
@@ -111,6 +114,7 @@ def run(
 
     samples = latin_hypercube_weights(n_samples, criterion_names, seed=seed)
     nasa = regions_to_geodataframe()
+    nasa_polygons = regions_polygons_to_geodataframe()
     results = sweep_weights(
         score_maps,
         samples,
@@ -120,6 +124,7 @@ def run(
         proximity_threshold_km=proximity_threshold_km,
         far_threshold_km=far_threshold_km,
         criterion_order=criterion_names,
+        nasa_regions_polygons=nasa_polygons,
     )
 
     parquet_path = outputs_dir / "sensitivity_results.parquet"

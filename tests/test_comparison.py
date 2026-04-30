@@ -10,7 +10,10 @@ from selene_base.validation.comparison import (
     proximity_analysis,
     render_summary,
 )
-from selene_base.validation.nasa_regions import regions_to_geodataframe
+from selene_base.validation.nasa_regions import (
+    regions_polygons_to_geodataframe,
+    regions_to_geodataframe,
+)
 
 
 def _sites(rows: list[dict]) -> gpd.GeoDataFrame:
@@ -130,7 +133,7 @@ def test_render_summary_prints_both_tables() -> None:
     sites = _sites([{"site_id": "x", "rank": 1, "lat": -85.0, "lon": 0.0}])
     text = render_summary(proximity_analysis(sites, nasa))
     assert "centroid-distance metrics" in text
-    assert "polygon-inside metrics" in text
+    assert "15 km disk metrics" in text
     assert "inside any 15 km disk" in text
     assert "regions containing a top site" in text
     assert "dist-edge" in text
@@ -174,3 +177,104 @@ def test_near_km_threshold_is_respected() -> None:
     just_over = proximity_analysis(sites, nasa, near_km=nearest + 1.0)
     assert just_under["sites_within_25km_of_region"] == 0
     assert just_over["sites_within_25km_of_region"] == 1
+
+
+# ----------------------- USGS polygon pathway (week 10) -----------------------
+
+
+def test_usgs_metrics_absent_when_polygons_not_provided() -> None:
+    nasa = regions_to_geodataframe()
+    sites = _sites([{"site_id": "a", "rank": 1, "lat": -85.0, "lon": 0.0}])
+    result = proximity_analysis(sites, nasa)
+    # Legacy keys present:
+    assert "sites_inside_any_region" in result
+    # USGS keys absent when polygons not given:
+    assert "sites_inside_any_usgs_polygon" not in result
+    assert "per_usgs_region" not in result
+    assert "per_site_usgs" not in result
+
+
+def test_usgs_metrics_present_when_polygons_provided() -> None:
+    nasa = regions_to_geodataframe()
+    nasa_polys = regions_polygons_to_geodataframe()
+    sites = _sites([{"site_id": "a", "rank": 1, "lat": -85.0, "lon": 0.0}])
+    result = proximity_analysis(sites, nasa, nasa_regions_polygons=nasa_polys)
+    assert result["n_usgs_regions"] == 9
+    assert "sites_inside_any_usgs_polygon" in result
+    assert "regions_with_top_site_inside_usgs_polygon" in result
+    assert "median_distance_to_nearest_usgs_polygon_km" in result
+    assert len(result["per_usgs_region"]) == 9
+    assert len(result["per_site_usgs"]) == 1
+
+
+def test_site_inside_usgs_polygon_is_detected() -> None:
+    """Place a top site at the centre of Mons Mouton Plateau's USGS
+    polygon (computed from the polygon's own centroid) and verify the
+    USGS pathway flags it as inside.
+    """
+    nasa = regions_to_geodataframe()
+    nasa_polys = regions_polygons_to_geodataframe()
+    plateau = nasa_polys[nasa_polys["Region"] == "Mons Mouton Plateau"].iloc[0]
+    centroid = plateau.geometry.centroid
+    sites = _sites(
+        [{"site_id": "inside_mp", "rank": 1, "lat": float(centroid.y), "lon": float(centroid.x)}]
+    )
+    result = proximity_analysis(sites, nasa, nasa_regions_polygons=nasa_polys)
+    assert result["sites_inside_any_usgs_polygon"] == 1
+    assert result["regions_with_top_site_inside_usgs_polygon"] == 1
+    site = result["per_site_usgs"][0]
+    assert site["inside_any_usgs_polygon"] is True
+    assert site["containing_polygon_name"] == "Mons Mouton Plateau"
+    assert site["distance_to_nearest_polygon_km"] == 0.0
+
+
+def test_site_far_from_usgs_polygons_records_distance() -> None:
+    nasa = regions_to_geodataframe()
+    nasa_polys = regions_polygons_to_geodataframe()
+    # Place a site at lat -82, lon 180 — opposite hemisphere from every
+    # USGS polygon, so distance must be large and inside flags False.
+    sites = _sites([{"site_id": "off", "rank": 1, "lat": -82.0, "lon": 180.0}])
+    result = proximity_analysis(sites, nasa, nasa_regions_polygons=nasa_polys)
+    assert result["sites_inside_any_usgs_polygon"] == 0
+    assert result["regions_with_top_site_inside_usgs_polygon"] == 0
+    site = result["per_site_usgs"][0]
+    assert site["inside_any_usgs_polygon"] is False
+    assert site["containing_polygon_name"] is None
+    assert site["distance_to_nearest_polygon_km"] > 100.0
+
+
+def test_per_usgs_region_table_lists_every_region() -> None:
+    nasa = regions_to_geodataframe()
+    nasa_polys = regions_polygons_to_geodataframe()
+    sites = _sites([{"site_id": "a", "rank": 1, "lat": -85.0, "lon": 0.0}])
+    result = proximity_analysis(sites, nasa, nasa_regions_polygons=nasa_polys)
+    names = {row["name"] for row in result["per_usgs_region"]}
+    assert names == set(nasa_polys["Region"])
+    # Each row carries a code and area.
+    for row in result["per_usgs_region"]:
+        assert isinstance(row["code"], str) and row["code"]
+        assert row["area_km2"] > 0
+
+
+def test_render_summary_prints_three_tables() -> None:
+    nasa = regions_to_geodataframe()
+    nasa_polys = regions_polygons_to_geodataframe()
+    sites = _sites([{"site_id": "x", "rank": 1, "lat": -85.0, "lon": 0.0}])
+    text = render_summary(proximity_analysis(sites, nasa, nasa_regions_polygons=nasa_polys))
+    assert "centroid-distance metrics" in text
+    assert "15 km disk metrics" in text
+    assert "USGS polygon metrics" in text
+    assert "inside any USGS polygon" in text
+    assert "USGS polygon per-region" in text
+
+
+def test_empty_sites_with_usgs_polygons_returns_zeroed_keys() -> None:
+    sites = _sites([])
+    nasa = regions_to_geodataframe()
+    nasa_polys = regions_polygons_to_geodataframe()
+    result = proximity_analysis(sites, nasa, nasa_regions_polygons=nasa_polys)
+    assert result["n_usgs_regions"] == 9
+    assert result["sites_inside_any_usgs_polygon"] == 0
+    assert result["regions_with_top_site_inside_usgs_polygon"] == 0
+    assert result["per_usgs_region"] == []
+    assert result["per_site_usgs"] == []

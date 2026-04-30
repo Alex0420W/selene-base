@@ -1,6 +1,6 @@
 # selene-base
 
-> Multi-criteria habitat suitability for the lunar south pole. A nine-week engineering arc that identified, diagnosed, and partially fixed a structural limit of weighted-sum decision analysis — and re-measured against the right geometric primitive once the methodology was sound.
+> Multi-criteria habitat suitability for the lunar south pole. A ten-week engineering arc that identified a structural limit of weighted-sum decision analysis, fixed it where it could be fixed, and ultimately validated against the authoritative USGS-published Artemis III region polygons rather than the disk approximations earlier versions were forced to use.
 
 [![CI](https://img.shields.io/badge/ci-pending-lightgrey)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,7 +11,7 @@ NASA's Artemis III mission will land humans near the lunar south pole around 202
 
 ## Headline finding
 
-This project's most defensible result is **a methodology finding, not an alignment number.** Across nine weeks of progressive refinement against NASA's nine announced Artemis III candidate regions:
+This project's most defensible result is **a methodology finding plus an authoritative geometric finding.** Across ten weeks of progressive refinement against NASA's nine announced Artemis III candidate regions — and, in v1.2.0, against the USGS-published authoritative simplified region envelopes:
 
 1. **Adding well-validated criteria can degrade alignment.** Integrating Diviner PRP thermal and ice criteria — both showing strong individual agreement with NASA centroids — *worsened* median distance from 65 km to 102 km. Weighted-sum MCDA cannot model NASA's coupled spatial constraint (near a PSR *and* near a sunlit ridge); it lets a high score on one axis compensate for a near-zero on another, producing top sites that maximize independent criteria but rarely satisfy the conjunction.
 
@@ -21,28 +21,34 @@ This project's most defensible result is **a methodology finding, not an alignme
 
 4. **An Earth line-of-sight criterion (week 9) narrows the gap without closing it.** Adding the most physically prominent missing criterion — a per-pixel Earth-visibility fraction derived from a 36-azimuth horizon ray-march on the LOLA elevation grid plus libration-cycle sampling of the sub-Earth point — shifted the closest-distance from 47.8 km to **27.3 km** (centroid) and from 32.8 km to **12.3 km** (disk edge), put **1/9 NASA regions within one disk radius of a top site** for the first time (Cabeus B), lifted the sensitivity ceiling from 3/9 to **4/9** regions matched, and produced **the first non-zero polygon-inside count in any sensitivity run (21/200 samples now show ≥1 site inside a NASA disk)** — though the default-weights polygon-inside count is still **0/20**. The geometric gap is no longer absolute; it is, however, still *robust* under the operations-driven defaults.
 
-This is what the engineering arc actually shows: the model is calibrated, the criteria are tuned, the validation primitive is defensible, and the 0/20 result under defaults is a real geometric finding — selene-base's top-20 still cluster on the polar rim band where coupling > 0, NASA's nine centroids sit in the middle of 15 km disks, and even the most physically prominent additional criterion (Earth comms) doesn't quite collapse those two geometries onto each other under the operations-driven default weights. The non-zero sensitivity-tail of 21/200 weight regimes that *do* produce 1/20 inside-any-disk says the gap is closeable for some weight choices; the default-weights persistence says it is not closed by physics-driven defaults alone.
+5. **Replacing the 15 km disk approximations with USGS's authoritative published polygons (week 10) confirms the geometric separation is not a disk-approximation artefact.** USGS Data Release 10.5066/P1MEQ6UK ships simplified envelopes (4-vertex quadrilaterals) for all nine Artemis III regions, derived from NASA's LROC QuickMap definitions. They differ substantively from the disk approximations: most regions are ~400 km² quadrilaterals (vs the disk's 707 km²); Mons Mouton Plateau alone is **4,452 km² — over 6× larger than the disk**; one region the legacy code called "Cabeus B" is published as "Peak Near Cabeus B" centred on the rim, not the crater floor; and one disk centroid (the legacy "Slater Plain" at lon -54.3°) sits ~180° away from where USGS publishes Slater Plain (lon +125°). Against these authoritative polygons, the default-weights result is **0/20 top sites inside any USGS polygon, 0/9 USGS regions containing a top site, median distance to the nearest USGS polygon 135.1 km, closest 41.5 km (de Gerlache Rim 2)**. The 200-sample sensitivity sweep produces ≥1 site inside a USGS polygon in **6 / 200 samples** (max 2/20). **The geometric separation is real even against the right validation reference** — the disk approximations were systematically misrepresenting the regions, but the model's rim-band optimum is still geometrically distinct from NASA's authoritative regions.
+
+This is what the engineering arc actually shows: the model is calibrated, the criteria are tuned, the validation primitive is **finally** authoritative, and the 0/20 result under defaults is a real geometric finding — selene-base's top-20 cluster on the polar rim band where the coupling criterion is non-zero; NASA's authoritative USGS-published landing-region polygons sit 41–135 km away from that band; even the most physically prominent missing criterion (Earth comms) and the right validation reference don't close the gap. The non-zero sensitivity-tail of 6/200 weight regimes that *do* produce 1/20 inside-any-USGS-polygon says the gap is closeable for some weight choices; the default-weights persistence says it is not closed by physics-driven defaults alone. The "validation metric was the bottleneck" hypothesis from v1.0.0 was *partly* correct — the disk approximations were systematically wrong — but the *underlying* geometric gap, now measured against authoritative geometry, persists.
 
 ![Coupling score with NASA candidates and our top-20 overlaid](docs/img/coupling_overlay.png)
 
-### Five-stage validation history
+### Six-stage validation history
 
-| Validation metric | 3-criteria | 5-criteria (+ Diviner PRP) | 6-criteria (+ coupling) | 6-criteria + week 8 corrections | 7-criteria (+ LOS to Earth) |
-| --- | --- | --- | --- | --- | --- |
-| top sites within 25 km of any centroid | 0 / 20 | 0 / 20 | 0 / 20 | 0 / 20 | **0 / 20** |
-| top sites inside any 15 km disk | n/a | n/a | n/a | 0 / 20 | **0 / 20** |
-| regions containing a top site | n/a | n/a | n/a | 0 / 9 | **0 / 9** |
-| regions with a top site within 1 disk radius of edge | n/a | n/a | n/a | 0 / 9 | **1 / 9** |
-| closest NASA region (centroid) | 25.8 km | 64.8 km | 47.8 km | 47.8 km | **27.3 km** |
-| closest NASA region (disk edge) | n/a | n/a | n/a | 32.8 km | **12.3 km** |
-| 200-sample sensitivity, *best* regions matched | 2 / 9 | 2 / 9 | 3 / 9 (1 sample) | 3 / 9 (11 samples) | **4 / 9 (5 samples)** |
-| 200-sample sensitivity, modal outcome | 0/9 (71.5 %) | 0/9 (92.5 %) | 0/9 (87 %) | 0/9 (86.5 %) | 0/9 (78.5 %) |
-| 200-sample sensitivity, samples with ≥1 site inside any disk | n/a | n/a | n/a | 0 / 200 | **21 / 200** |
-| coupling score at our top-20 vs NASA centroids | n/a | n/a | 0.053 vs 0.000 | 0.025 vs 0.000 | 0.025 vs 0.000 |
-| thermal score at our top-20 vs NASA centroids | n/a | 0.239 vs 0.113 (in tail) | 0.325 vs 0.113 (in tail) | 0.965 vs 0.526 (responsive) | **0.962 vs 0.526** |
-| LOS-to-Earth score at our top-20 vs NASA centroids | n/a | n/a | n/a | n/a | **1.000 vs 0.525 (bimodal)** |
+| Validation metric | 3-criteria | 5-criteria (+ PRP) | 6-criteria (+ coupling) | 6-crit + thermal/polygon | 7-criteria (+ LOS) | **7-criteria + USGS polygons** |
+| --- | --- | --- | --- | --- | --- | --- |
+| top sites within 25 km of any centroid | 0 / 20 | 0 / 20 | 0 / 20 | 0 / 20 | 0 / 20 | **0 / 20** |
+| top sites inside any 15 km disk | n/a | n/a | n/a | 0 / 20 | 0 / 20 | 0 / 20 |
+| **top sites inside any USGS polygon** | n/a | n/a | n/a | n/a | n/a | **0 / 20** |
+| **USGS regions containing a top site** | n/a | n/a | n/a | n/a | n/a | **0 / 9** |
+| **closest USGS polygon (km)** | n/a | n/a | n/a | n/a | n/a | **41.5** |
+| **median distance to nearest USGS polygon (km)** | n/a | n/a | n/a | n/a | n/a | **135.1** |
+| regions with a top site within 1 disk radius of edge | n/a | n/a | n/a | 0 / 9 | 1 / 9 | 1 / 9 |
+| closest NASA region (centroid) | 25.8 km | 64.8 km | 47.8 km | 47.8 km | **27.3 km** | 27.3 km |
+| closest NASA region (disk edge) | n/a | n/a | n/a | 32.8 km | **12.3 km** | 12.3 km |
+| 200-sample sensitivity, *best* regions matched (centroid≤25 km) | 2 / 9 | 2 / 9 | 3 / 9 (1 sample) | 3 / 9 (11 samples) | 4 / 9 (5 samples) | **4 / 9 (5 samples)** |
+| 200-sample sensitivity, modal outcome | 0/9 (71.5 %) | 0/9 (92.5 %) | 0/9 (87 %) | 0/9 (86.5 %) | 0/9 (78.5 %) | 0/9 (78.5 %) |
+| 200-sample sensitivity, samples with ≥1 site inside any disk | n/a | n/a | n/a | 0 / 200 | 21 / 200 | 21 / 200 |
+| **200-sample sensitivity, samples with ≥1 site inside any USGS polygon** | n/a | n/a | n/a | n/a | n/a | **6 / 200** |
+| coupling score at our top-20 vs NASA centroids | n/a | n/a | 0.053 vs 0.000 | 0.025 vs 0.000 | 0.025 vs 0.000 | 0.025 vs 0.000 |
+| thermal score at our top-20 vs NASA centroids | n/a | 0.239 vs 0.113 (in tail) | 0.325 vs 0.113 (in tail) | 0.965 vs 0.526 | 0.962 vs 0.526 | 0.962 vs 0.526 |
+| LOS-to-Earth score at our top-20 vs NASA centroids | n/a | n/a | n/a | n/a | 1.000 vs 0.525 (bimodal) | 1.000 vs 0.525 |
 
-The default-weights polygon-inside number is *stable at 0/20 across all five stages*. What moved is the structure behind that number — the sensitivity ceiling lifted again (3 → 4 regions), the closest-edge metric collapsed by another 20 km, **the polygon-inside count became sample-non-zero for the first time** (21/200 weight regimes hit 1/20 or more), and one NASA region (Cabeus B) is now within disk-radius of a top site. Each stage closed one explanation for why alignment didn't improve under defaults and isolated what remained. By week 9, the residual gap under default weights is geometric and operationally defensible: the model picks the polar rim band where every criterion (including LOS) is near-saturated; NASA's nine centroids sit in 15 km disks whose centres are not on that band. The gap collapses for ~10 % of the weight simplex, but **the operations-driven defaults — chosen *before* the validation rerun — do not close it.**
+The default-weights inside-region number is *0 across all six stages, against every validation primitive tried*. What moved is the structure behind that number — the sensitivity ceiling lifted twice (2 → 3 → 4 regions), the closest-edge metric collapsed (47.8 → 12.3 km against disks; the v1.2 USGS polygons reset the closest-distance to 41.5 km because USGS's "Slater Plain" sits 180° away in longitude from where the legacy disk centroid placed it), **the polygon-inside count became sample-non-zero against disks** (21/200 weight regimes hit 1/20 or more), and one NASA region (Cabeus B) came within disk-radius of a top site. v1.2.0 against the authoritative USGS polygons confirms the geometric separation is *not* a disk-approximation artefact: even with the right validation reference, only 6/200 weight regimes produce ≥1 site inside any USGS polygon, and the default-weights answer is 0/20. **The model picks the polar rim band where the coupling criterion is non-zero; NASA's published landing-region polygons sit 41–135 km away from that band; no setting of physics-driven defaults collapses those two geometries onto each other** — that is the project's terminal finding.
 
 For the per-region distance table see `data/outputs/validation.json` (now contains both centroid-distance and polygon-inside metrics), or run `selene validate` on a fresh checkout. The interactive map lives at [`data/outputs/webmap.html`](data/outputs/webmap.html) after `selene viz`; per-site reports under [`data/outputs/sites/`](data/outputs/sites/).
 
@@ -179,26 +185,56 @@ A few choices in the pipeline are worth surfacing because they materially affect
 - **Two complementary validation metrics under one command.** `selene validate` reports both the legacy centroid-distance number and the week 8 polygon-inside number side by side, so a single run produces the full geometric story rather than forcing a choice between primitives.
 - **CI smoke test on bundled sample data.** A separate CI job downloads the ~12 MB sample tarball and runs `preprocess → score → rank → validate → compare` end-to-end on every push to `main`. Catches integration regressions unit tests miss.
 - **Cache horizon-profile as compressed numpy, not GeoTIFF.** The week-9 LOS criterion needs a 3D ``(azimuth, y, x)`` horizon field that doesn't fit a single-band GeoTIFF cleanly; netCDF is the idiomatic xarray choice but the only netCDF backend available without compiled `netCDF4`/`h5netcdf` system deps is `scipy`, and that backend doesn't accept zlib compression — leaving an uncompressed ~930 MB file. Switching to `np.savez_compressed` keeps the cache pure-numpy, compresses the same float32 grid to ~840 MB without new dependencies, and the consumer (`compute_earth_visibility_fraction`) doesn't need the rio metadata anyway. The 2D consumer-facing artifact (`los_visibility_fraction_southpole_240m.tif`) stays as a normal COG.
+- **Authoritative validation reference, bundled in-repo.** Validation against NASA's Artemis III candidate regions uses USGS's officially-published simplified region envelopes ([DOI 10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK)), not synthesised disk approximations. The dataset shipped late in development; v1.0.0 and v1.1.0 used 15 km-radius disks, which we found systematically misrepresent the actual region geometries (most are ~400 km² quadrilaterals; Mons Mouton Plateau alone is 4452 km², 6× larger than the disk; one disk centroid for "Slater Plain" sits ~180° in longitude away from the USGS polygon's actual location). v1.2.0 ships the USGS GeoJSON in [`src/selene_base/validation/data/`](src/selene_base/validation/data/) so the validation primitive is reproducible without re-downloading external data, and the disk metrics are kept in parallel for continuity with the v1.0 / v1.1 validation history.
 
 ## Validation
 
-`selene validate` compares the top-N ranked sites (from `data/outputs/top_sites.geojson`) against the disk-approximation polygons of NASA's nine announced Artemis III candidate regions in [`src/selene_base/validation/nasa_regions.py`](src/selene_base/validation/nasa_regions.py). Centroids are public information from NASA's October 2024 Artemis III site-selection announcement; we approximate each region as a 15 km disk around its centroid because NASA's actual polygons are not openly published in machine-readable form. **The disks are not authoritative geometry** — they're a defensible proximity proxy for this comparison, *and the week 7 finding shows where that proxy breaks down* — see [Headline finding](#headline-finding).
+`selene validate` compares the top-N ranked sites (from `data/outputs/top_sites.geojson`) against three references in [`src/selene_base/validation/nasa_regions.py`](src/selene_base/validation/nasa_regions.py):
 
-Two metrics for each top site:
+1. **NASA centroids** as 15 km-radius disks (legacy, weeks 4-9). Centroids from NASA's October 2024 Artemis III site-selection announcement; the disk radius is the publicly cited "operational region" scale. **Not authoritative geometry** — used through v1.1.0 only because the actual polygons were not openly published.
+2. **Disk inside/outside** of those same 15 km disks (week 8 polygon-inside metric).
+3. **USGS published polygons** (week 10, v1.2.0 headline). The official simplified region envelopes from USGS Data Release [10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK) (McClernan 2024), bundled at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson). 4-vertex quadrilaterals in lunar planetocentric lon/lat space, sourced from NASA's LROC QuickMap region definitions. These are simplified envelopes, not the full operational landing footprints, but they are the **authoritative public approximation** of NASA's selected region geometries.
 
-1. **Inside any region** — does the site fall inside any of the nine 15 km disks?
-2. **Within X km of any centroid** — distance from the site to the nearest NASA centroid.
+The USGS polygons differ substantively from the disk approximations:
 
-And two for each NASA region:
+- **Names differ**: USGS calls one region "Peak Near Cabeus B" (centred on the rim peak at lat -83.7°, lon -68.7°), not "Cabeus B" (centred on the crater floor at lat -82.3°, lon -53.3° in the legacy disk list — about 150 km away from the USGS polygon).
+- **Sizes vary**: the simplified envelopes total ~8000 km² (vs the disks' uniform 707 km² × 9 = 6362 km²), but Mons Mouton Plateau alone is **4452 km² — over 6× the disk area**, while seven other regions are ~400 km² (smaller than the disks).
+- **Locations are not always close**: the legacy disk centroid for "Slater Plain" sits at lon -54.3°, ~180° away from where USGS publishes Slater Plain (lon +125°). The legacy list inherited a press-release centroid that doesn't match the authoritative USGS polygon.
 
-1. **Distance to nearest top-N site** — how far away is the closest selene-base candidate?
-2. **Contains a top-N site** — is at least one selene-base candidate inside this region's disk?
+Three metrics for each top site:
 
-### Per-region results (week 9: 7-criterion + LOS-to-Earth)
+1. **Within X km of any centroid** (legacy week 4)
+2. **Inside any 15 km disk** (week 8)
+3. **Inside any USGS polygon** (week 10 — *headline*)
 
-![Distance from each NASA Artemis III candidate to the nearest selene-base top site](docs/img/validation_table.png)
+And two for each USGS region:
 
-| NASA candidate | nearest site | dist to centroid (km) | dist to disk edge (km) | inside disk? |
+1. **Distance to nearest top-N site** — distance from the USGS polygon boundary to the closest selene-base candidate.
+2. **Contains a top-N site** — is at least one selene-base candidate inside the USGS polygon?
+
+![Score map with USGS polygons (red) and 15 km disks (grey, dashed) overlaid](docs/img/usgs_polygon_validation.png)
+
+### Per-USGS-region results (week 10: 7-criterion + LOS-to-Earth, USGS polygons)
+
+| USGS region | code | area (km²) | nearest top site | distance to polygon (km) | contains a top site? |
+| --- | --- | ---: | --- | ---: | --- |
+| de Gerlache Rim 2 | G2 | 400.0 | site_01 | **41.5** | no |
+| Peak Near Cabeus B | CB | 399.8 | site_18 | 67.3 | no |
+| Haworth | HW | 888.0 | site_01 | 71.5 | no |
+| Mons Mouton Plateau | MP | 4451.8 | site_17 | 72.4 | no |
+| Slater Plain | SP | 399.8 | site_01 | 75.2 | no |
+| Malapert Massif | MA | 441.0 | site_01 | 102.1 | no |
+| Nobile Rim 1 | N1 | 400.0 | site_01 | 115.6 | no |
+| Mons Mouton | MM | 256.0 | site_01 | 118.7 | no |
+| Nobile Rim 2 | N2 | 400.0 | site_07 | 134.8 | no |
+
+The closest USGS polygon is **de Gerlache Rim 2 at 41.5 km** from `site_01` (-89.7°, +17.7°). The median distance to the nearest USGS polygon across the top-20 is **135.1 km**. Every top site sits outside every USGS polygon — the geometric separation persists against the authoritative reference.
+
+### Per-region results vs the 15 km disks (legacy, weeks 4-9)
+
+The disk-based table is preserved for continuity with the v1.0.0 / v1.1.0 history; the headline metric is the USGS table above.
+
+| NASA disk | nearest site | dist to centroid (km) | dist to disk edge (km) | inside disk? |
 | --- | --- | ---: | ---: | --- |
 | Cabeus B | site_18 | **27.3** | **12.3** | no |
 | Haworth | site_01 | 97.6 | 82.6 | no |
@@ -210,7 +246,7 @@ And two for each NASA region:
 | de Gerlache Rim 2 | site_01 | 47.8 | 32.8 | no |
 | Slater Plain | site_01 | 55.4 | 40.4 | no |
 
-Adding LOS-to-Earth shifted the top-20 toward Earth-facing sites and brought a top site (site_18 at -82.83°, -47.68°) into Cabeus B's gravitational neighbourhood — the closest disk-edge distance dropped from 32.8 km (week 8) to **12.3 km**, and Cabeus B now has a top site within 1 disk radius of its boundary (the only such region). The dist-to-edge column is still exactly disk-radius (15 km) below the centroid distance for every region — every top site is still *outside* every disk, just two of them are now close enough that one disk-radius of slack would catch them. The closest pair (de Gerlache Rim 2 / Slater Plain via `site_01`) is unchanged from week 8 because `site_01` itself is unchanged: at (-89.7°, +17.7°), aggregate score 0.800, four criteria saturated at 1.0 (illumination, ice, hazard, los_to_earth).
+The disk-based "Cabeus B" entry shows a top site within 12.3 km of the disk edge — but the corresponding USGS polygon ("Peak Near Cabeus B", at a different geographic location) is 67.3 km from the same `site_18`, because the legacy disk centroid sits ~150 km north-east of where USGS places the actual region. Two of the disk-table closest distances (Cabeus B and de Gerlache Rim 2) are misleading once measured against the right geometry.
 
 ## Robustness
 
@@ -218,16 +254,15 @@ Anyone reading 0/20 fairly asks: *is that just a function of the default weights
 
 ![sensitivity over 200 weight samples](docs/img/sensitivity_distribution.png)
 
-The 7-criterion sensitivity (with LOS-to-Earth added in week 9) lifted the ceiling and produced the first non-zero polygon-inside count:
+The 7-criterion sensitivity sweep is now run against **both** the legacy 15 km disks and the USGS polygons (week 10). Distribution across 200 weight samples:
 
-- **157 / 200 samples (78.5 %) match 0 regions within 25 km** — the modal outcome.
-- **8 / 200 samples (4.0 %) match 1 region**; **16 / 200 (8.0 %) match 2 regions** (typically Slater Plain + de Gerlache Rim 2).
-- **14 / 200 samples (7.0 %) match 3 regions**; **5 / 200 (2.5 %) match 4 regions** — the new sensitivity ceiling, lifted from 3/9 in week 8.
-- **21 / 200 samples (10.5 %) put at least one top site *inside* a 15 km disk.** Pre-week-9 (six criteria, no LOS) the polygon-inside count was 0 in every one of 200 samples; adding LOS made the metric sample-non-zero for the first time.
+- **Centroid-distance metric (legacy)**: 157/200 samples (78.5 %) match 0 regions within 25 km of any centroid; 8/200 match 1, 16/200 match 2, 14/200 match 3, 5/200 match 4 — the sensitivity ceiling lifted from 3/9 in week 8 to 4/9 in weeks 9-10.
+- **Disk inside/outside (week 8 metric)**: 21/200 samples (10.5 %) put at least one top site *inside* a 15 km disk. Pre-week-9 (six criteria, no LOS) this was 0/200.
+- **USGS polygon inside/outside (week 10 metric, headline)**: **194 / 200 samples (97.0 %) put 0 sites inside any USGS polygon**; 5/200 (2.5 %) put 1 inside; 1/200 (0.5 %) puts 2 inside. **Best case across the sweep is 2 / 20 sites inside USGS polygons.** The minimum median-distance-to-nearest-USGS-polygon across the sweep is 41.2 km; the mean is 128 km.
 
-The best weight regime found is `slope = 0.07, illumination = 0.24, coupling = 0.21, thermal = 0.00, ice = 0.16, hazard = 0.31, los_to_earth = 0.08` — every criterion contributes (almost), and 4/9 NASA regions are now within 25 km of a top site. The default-weight headline is still 0/20 polygon-inside / 0/20 within-25 km / **1/9 within disk-radius**: the LOS criterion *narrowed* the gap (closest disk-edge 32.8 km → 12.3 km) but didn't close it under the operations-driven defaults.
+The best weight regime against the legacy centroid metric is `slope = 0.07, illumination = 0.24, coupling = 0.21, thermal = 0.00, ice = 0.16, hazard = 0.31, los_to_earth = 0.08` — every criterion contributes, and 4/9 NASA regions are now within 25 km of a top site. The default-weight headline against the **USGS polygons** is **0/20 inside any polygon, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2)**.
 
-The structural picture is now: the gap collapses for ~10 % of the weight simplex, but the operations-driven default weights — chosen *before* the validation rerun on physics-and-operations grounds — do not collapse it. The diagnostic comparison shows what the criteria are saying about that gap.
+The structural picture: against the legacy disk metric the geometric gap collapses for ~10 % of the weight simplex; against the authoritative USGS polygons it collapses for only ~3 % of the simplex (max 2/20 inside, never more). The disk approximations were systematically wrong — names, sizes, and one location (Slater Plain) were misplaced — but the *underlying geometric separation* between the model's rim-band optimum and NASA's authoritative regions persists across both validation references and across most of the weight simplex. The diagnostic comparison shows what the criteria are saying about that gap.
 
 ## Diagnostic comparison
 
@@ -276,7 +311,7 @@ selene-base/
 
 The dependency graph is one-way: `data/` is the foundation; `criteria/` reads loaded rasters; `scoring/` aggregates criterion outputs; `validation/` and `viz/` consume scoring outputs; `pipeline/` orchestrates; `cli.py` exposes the orchestrators. Tests follow the same layering.
 
-300 tests, ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank -> validate -> compare`, and asserts every output file is on disk and schema-valid.
+312 tests, ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank -> validate -> compare`, and asserts every output file is on disk and schema-valid.
 
 ## Roadmap
 
@@ -289,12 +324,13 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - **Week 7 — spatial-coupling criterion.** ✅ `criteria/coupling.py` scores cells by joint proximity to a PSR and a sunlit ridge via a multiplicative product of two distance falloffs, encoding the AND that linear-sum aggregation cannot. `selene coupling-sweep` tunes the single `coupling_distance_km` knob across 1–20 km. The fix lifted the sensitivity ceiling from 2/9 -> 3/9 region matches and improved closest-distance from 64.8 km -> 47.8 km, but did not break the 25 km threshold. The diagnostic surfaced the project's sharpest finding: **NASA centroids score 0.000 on coupling** — meaning the validation metric (distance to disk centroid) is itself misaligned with NASA's selection logic. NASA's preferred landing footprints within each region are off-centroid by 5–15 km by construction.
 - **Week 8 — closing chapter: polygon validation, thermal correction, engineering decisions.** ✅ Three changes, all driven by week 7's diagnostic. (1) `validation/comparison.py` now computes polygon-inside metrics alongside the legacy centroid-distance metrics — `sites_inside_any_region`, `regions_containing_top_site`, `regions_with_top_site_within_disk_radius`, plus signed `distance_to_edge_km` per site/region. The polygon primitive doesn't move the headline (0/20 sites inside any disk; closest edge 32.8 km) — informative on its own, since it shows the rim band the model identifies is geometrically distinct from NASA's centroid disks regardless of which proximity primitive you choose. (2) Thermal default corrected: `target_temp_k` 230 -> 140, `sigma_k` 50 -> 30. The previous values placed the Gaussian peak *outside* the data support (PRP `temp_avg` peaks at 211 K, median 131 K), so every cell scored in the tail. With the correction, our top-20 thermal mean rises 0.325 -> 0.965 and NASA centroids 0.113 -> 0.526; the criterion contributes discriminative signal again, and the sensitivity ceiling broadens from 1/200 to 11/200 weight regimes hitting 3/9 region matches. (3) New "Engineering decisions" section documenting the seven non-obvious choices.
 - **Week 9 — Earth line-of-sight criterion.** ✅ `criteria/los_to_earth.py` adds the seventh criterion: a per-pixel Earth-visibility fraction derived from a 36-azimuth, log-spaced 50-distance horizon ray-march on the LOLA elevation grid (with curvature correction for $R = 1737.4\,$km), combined with 24-sample libration-cycle sampling of Earth's sub-Earth point on a $\pm6.5°\times\pm7.9°$ ellipse. Score is a linear ramp from `min_visibility = 0.20` (Apollo crew-safety floor) to `target_visibility = 0.50` (sustained-habitat target). Default weight 0.15 — chosen *before* the validation rerun on physics-and-operations grounds, not validation chasing. Effect: closest-disk-edge dropped from 32.8 km → **12.3 km** (Cabeus B, the first NASA region to come within 1 disk-radius of a top site), sensitivity ceiling lifted 3/9 → **4/9** regions matched, and the polygon-inside count became sample-non-zero for the first time (**21/200 weight regimes** now produce ≥1 inside any disk; 0/200 in week 8). Headline polygon-inside under defaults: still **0/20** — the operations-driven defaults narrow the gap but don't close it. The geometric finding from weeks 7-8 holds: under physics-driven defaults, our model picks the polar rim band where every criterion (now including LOS) is near-saturated, and NASA's centroids are inside the disks 5–15 km off that band; the gap collapses for ~10 % of the weight simplex.
+- **Week 10 — USGS authoritative polygon validation (v1.2.0).** ✅ Replaced the 15 km disk approximations with USGS's officially-published simplified region envelopes (DOI 10.5066/P1MEQ6UK, McClernan 2024). The polygons ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson). `selene validate` now prints three result tables (centroid distance, 15 km disk inside/outside, USGS polygon inside/outside) and `validation.json` carries all three metric families. The disk approximations were systematically wrong: most regions are ~400 km² quadrilaterals (vs the 707 km² disk), Mons Mouton Plateau is **4452 km² — 6× the disk area**, one disk centroid for "Slater Plain" sits ~180° away from the USGS polygon's actual location, and "Cabeus B" was misnamed (USGS publishes "Peak Near Cabeus B", centred on the rim peak, not the crater floor). **Default-weights result against USGS polygons: 0/20 inside, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2). Sensitivity sweep: 6/200 weight regimes produce ≥1 site inside any USGS polygon (max 2/20), down from 21/200 against the disks** — the geometric separation is *more* pronounced against the right validation reference, not less, because the disks were inflated outward in places where the actual USGS polygons are not. The "validation metric was the bottleneck" hypothesis from v1.0.0 was *partially* correct (the disk approximations were wrong) but the *underlying* geometric separation between the model's rim-band optimum and NASA's authoritative regions persists.
 
 ### Where this goes next
 
-Earth line-of-sight shipped this week. The remaining open methodological candidate is unchanged.
+The validation-reference question is closed: v1.2.0 measures against the authoritative USGS polygons. The remaining open methodological candidate is unchanged.
 
-**TOPSIS aggregator behind `--method topsis`.** TOPSIS (Technique for Order of Preference by Similarity to Ideal Solution) ranks each cell by Euclidean distance to a synthetic "ideal" and "anti-ideal" point in criterion-score space. It penalises lop-sided profiles globally rather than at one specific spatial coupling — complementary to the coupling and LOS criteria, not a substitute for either. Easy to drop in behind a CLI flag (~a day of work). Whether TOPSIS would close the headline gap or not is an open question; the week-9 result that 21/200 weight regimes already produce a non-zero polygon-inside count under linear-sum suggests the structural ceiling is not absolute.
+**TOPSIS aggregator behind `--method topsis`.** TOPSIS (Technique for Order of Preference by Similarity to Ideal Solution) ranks each cell by Euclidean distance to a synthetic "ideal" and "anti-ideal" point in criterion-score space. It penalises lop-sided profiles globally rather than at one specific spatial coupling — complementary to the coupling and LOS criteria, not a substitute for either. Easy to drop in behind a CLI flag (~a day of work). Whether TOPSIS would close the headline gap or not is an open question; the week-10 result that 6/200 weight regimes already produce a non-zero USGS-polygon-inside count under linear-sum suggests the structural ceiling is not absolute, but it is *very* tight.
 
 ### Smaller follow-ups
 
@@ -314,6 +350,7 @@ Earth line-of-sight shipped this week. The remaining open methodological candida
 - Watters, T. R., Robinson, M. S., Banks, M. E., Tran, T., & Denevi, B. W. (2015). *Global thrust faulting on the Moon and the influence of tidal stresses.* Geology, 43(10), 851–854. [doi:10.1130/G37120.1](https://doi.org/10.1130/G37120.1)
 - Civilini, F., Weber, R. C., Jiang, Z., Phillips, D., & Pan, W. (2023). *Constraints on the seismic hazard of young thrust faults on the Moon from re-located shallow moonquakes.* (Used as motivation for the seismic exclusion criterion.)
 - NASA (October 2024). *Artemis III candidate landing regions.* [https://www.nasa.gov/feature/artemis-iii](https://www.nasa.gov/feature/artemis-iii)
+- McClernan, M.T. (2024). *Down Selected Artemis III Candidate Landing Site Navigational Grids.* U.S. Geological Survey data release. [https://doi.org/10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK). The simplified region envelopes from this release ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson) and are the authoritative validation reference from v1.2.0 onwards.
 
 ## Notes for the reader
 

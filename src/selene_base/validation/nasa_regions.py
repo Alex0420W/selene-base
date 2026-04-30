@@ -1,18 +1,34 @@
 """NASA's nine announced Artemis III candidate landing regions.
 
-Coordinates are approximate centroids derived from NASA's public
-site-selection materials (October 2024 announcement, current as of
-2026). NASA's actual definitions are polygons that vary in shape and
-size — we use disk approximations of ``radius_km = 15`` to compare
-proximity, not for any claim of exact polygon match. The 15 km radius
-is the publicly cited "operational region" scale around each centroid.
+Two parallel representations live here:
 
-Don't use this list as authoritative geometry; it's a comparison-only
-approximation for the validation step in :mod:`selene_base.validation.comparison`.
+- :func:`regions_to_geodataframe` builds 15 km-radius **disk
+  approximations** around centroids derived from NASA's October 2024
+  public announcement. This is the legacy week-4 representation and
+  what the disk-based polygon-inside metric (week 8) compares against.
+- :func:`regions_polygons_to_geodataframe` loads the USGS
+  officially-published **simplified region envelopes** (4-vertex
+  quadrilaterals) shipped in
+  ``validation/data/nasa_regions_polygons_usgs.geojson``. This is the
+  authoritative machine-readable approximation introduced in week 10.
+  The shipped GeoJSON is canonical for the project and should not be
+  re-downloaded.
+
+Both representations remain available because the project's
+five-stage validation history (v0.1 through v1.1) used the disk
+approximations, and the corresponding metrics still ship for context
+and continuity.
+
+Source for the USGS polygons: USGS Data Release 10.5066/P1MEQ6UK
+(McClernan, M.T., 2024, "Down Selected Artemis III Candidate Landing
+Site Navigational Grids"). The polygons are the simplified envelopes
+of NASA's LROC QuickMap region definitions, not the full operational
+landing footprints.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TypedDict
 
 import geopandas as gpd
@@ -23,6 +39,21 @@ from shapely.geometry import Polygon
 from selene_base.data.load import LUNAR_GEOGRAPHIC_CRS
 
 DEFAULT_RADIUS_KM = 15.0
+
+USGS_POLYGONS_GEOJSON = Path(__file__).parent / "data" / "nasa_regions_polygons_usgs.geojson"
+USGS_POLYGONS_SOURCE_CRS = "+proj=longlat +R=1737400 +no_defs"
+USGS_POLYGONS_DOI = "10.5066/P1MEQ6UK"
+USGS_REGION_NAMES: tuple[str, ...] = (
+    "Nobile Rim 2",
+    "Mons Mouton",
+    "Malapert Massif",
+    "de Gerlache Rim 2",
+    "Mons Mouton Plateau",
+    "Slater Plain",
+    "Peak Near Cabeus B",
+    "Nobile Rim 1",
+    "Haworth",
+)
 
 
 class CandidateRegion(TypedDict):
@@ -95,5 +126,46 @@ def regions_to_geodataframe(target_crs: str | None = None) -> gpd.GeoDataFrame:
 
     gdf = gpd.GeoDataFrame(rows, crs=LUNAR_GEOGRAPHIC_CRS)
     if target_crs is not None and target_crs != str(LUNAR_GEOGRAPHIC_CRS):
+        gdf = gdf.to_crs(target_crs)
+    return gdf
+
+
+def regions_polygons_to_geodataframe(target_crs: str | None = None) -> gpd.GeoDataFrame:
+    """Load USGS-published Artemis III candidate region envelopes.
+
+    The polygons are the **simplified** USGS envelopes of NASA's nine
+    candidate regions — 4-vertex quadrilaterals in lunar planetocentric
+    lon/lat space, sourced from USGS Data Release 10.5066/P1MEQ6UK
+    (McClernan 2024). These are the authoritative machine-readable
+    approximation of NASA's region geometries; they are *not* the full
+    operational landing footprints.
+
+    The on-disk GeoJSON does not carry CRS metadata, so the source CRS
+    is set explicitly to :data:`USGS_POLYGONS_SOURCE_CRS`
+    (``+proj=longlat +R=1737400 +no_defs``).
+
+    Args:
+        target_crs: Target CRS as a PROJ string or EPSG code. ``None``
+            (default) returns lunar geographic lon/lat polygons.
+
+    Returns:
+        GeoDataFrame with columns ``Region`` (str), ``RegionCode``
+        (two-letter abbreviation), ``Area_km2`` (float), and
+        ``geometry`` (Polygon). Reprojected to ``target_crs`` if given.
+
+    Raises:
+        FileNotFoundError: If the bundled GeoJSON is missing.
+    """
+    if not USGS_POLYGONS_GEOJSON.exists():
+        raise FileNotFoundError(
+            f"USGS polygon GeoJSON not found at {USGS_POLYGONS_GEOJSON}; "
+            "this file ships with the package and should not be missing."
+        )
+
+    gdf = gpd.read_file(USGS_POLYGONS_GEOJSON)
+    gdf = gdf.set_crs(USGS_POLYGONS_SOURCE_CRS, allow_override=True)
+    keep = [c for c in ("Region", "RegionCode", "Area_km2", "geometry") if c in gdf.columns]
+    gdf = gdf[keep]
+    if target_crs is not None and target_crs != USGS_POLYGONS_SOURCE_CRS:
         gdf = gdf.to_crs(target_crs)
     return gdf

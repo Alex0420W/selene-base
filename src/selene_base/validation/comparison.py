@@ -56,7 +56,26 @@ class PerSiteResult(TypedDict):
     inside_any_region: bool
 
 
-class ProximityResult(TypedDict):
+class PerUSGSRegionResult(TypedDict):
+    name: str
+    code: str
+    area_km2: float
+    nearest_top_site_id: str
+    nearest_top_site_rank: int
+    distance_to_polygon_km: float  # 0 when site is inside, else metres-to-boundary in km
+    contains_top_site: bool
+
+
+class PerSiteUSGSResult(TypedDict):
+    site_id: str
+    rank: int
+    inside_any_usgs_polygon: bool
+    containing_polygon_name: str | None
+    nearest_polygon_name: str
+    distance_to_nearest_polygon_km: float
+
+
+class ProximityResult(TypedDict, total=False):
     n_top_sites: int
     n_nasa_regions: int
     near_km: float
@@ -64,12 +83,19 @@ class ProximityResult(TypedDict):
     sites_within_any_region: int  # legacy alias of sites_inside_any_region
     sites_within_25km_of_region: int
     regions_with_a_top_site: int  # legacy alias of regions_containing_top_site
-    # Polygon-based metrics (week 8):
+    # Disk polygon-based metrics (week 8):
     sites_inside_any_region: int
     regions_containing_top_site: int
     regions_with_top_site_within_disk_radius: int
     per_region: list[PerRegionResult]
     per_site: list[PerSiteResult]
+    # USGS polygon metrics (week 10) — present only when usgs_polygons given:
+    n_usgs_regions: int
+    sites_inside_any_usgs_polygon: int
+    regions_with_top_site_inside_usgs_polygon: int
+    median_distance_to_nearest_usgs_polygon_km: float
+    per_usgs_region: list[PerUSGSRegionResult]
+    per_site_usgs: list[PerSiteUSGSResult]
 
 
 def _project_xy(lons: np.ndarray, lats: np.ndarray) -> np.ndarray:
@@ -94,8 +120,9 @@ def proximity_analysis(
     nasa_regions: gpd.GeoDataFrame,
     *,
     near_km: float = DEFAULT_NEAR_KM,
+    nasa_regions_polygons: gpd.GeoDataFrame | None = None,
 ) -> ProximityResult:
-    """Compute alignment metrics — both centroid-distance and polygon-inside.
+    """Compute alignment metrics — centroid-distance, disk polygons, USGS polygons.
 
     Args:
         top_sites: GeoDataFrame with at minimum ``site_id``, ``rank``,
@@ -106,15 +133,24 @@ def proximity_analysis(
             geographic CRS.
         near_km: Threshold for the legacy "within X km of centroid"
             metric.
+        nasa_regions_polygons: Optional GeoDataFrame from
+            :func:`selene_base.validation.nasa_regions.regions_polygons_to_geodataframe`,
+            i.e. the USGS-published Artemis III simplified region
+            polygons (week 10). When provided, the result includes a
+            third metric family for inside-any-USGS-polygon plus a
+            per-USGS-region distance table; when absent, those keys are
+            omitted from the result and downstream tooling reads only
+            the legacy keys.
 
     Returns:
-        :class:`ProximityResult` dict with both metric families.
+        :class:`ProximityResult` dict with the metric families that
+        apply to the inputs given.
     """
     n_sites = len(top_sites)
     n_regions = len(nasa_regions)
 
     if n_sites == 0 or n_regions == 0:
-        return {
+        result: ProximityResult = {
             "n_top_sites": n_sites,
             "n_nasa_regions": n_regions,
             "near_km": near_km,
@@ -127,6 +163,14 @@ def proximity_analysis(
             "per_region": [],
             "per_site": [],
         }
+        if nasa_regions_polygons is not None:
+            result["n_usgs_regions"] = int(len(nasa_regions_polygons))
+            result["sites_inside_any_usgs_polygon"] = 0
+            result["regions_with_top_site_inside_usgs_polygon"] = 0
+            result["median_distance_to_nearest_usgs_polygon_km"] = float("nan")
+            result["per_usgs_region"] = []
+            result["per_site_usgs"] = []
+        return result
 
     nasa_geo = nasa_regions.to_crs(LUNAR_GEOGRAPHIC_CRS)
     nasa_polar = nasa_regions.to_crs(POLAR_PROJ)
@@ -227,7 +271,7 @@ def proximity_analysis(
     )
     n_regions_within_disk_radius = int(within_disk_radius.sum())
 
-    return {
+    result: ProximityResult = {
         "n_top_sites": n_sites,
         "n_nasa_regions": n_regions,
         "near_km": near_km,
@@ -241,13 +285,115 @@ def proximity_analysis(
         "per_site": per_site,
     }
 
+    if nasa_regions_polygons is not None and len(nasa_regions_polygons) > 0:
+        usgs_polar = nasa_regions_polygons.to_crs(POLAR_PROJ)
+        usgs_polygons_polar = list(usgs_polar.geometry)
+        n_usgs = len(usgs_polygons_polar)
+        usgs_names = [str(name) for name in usgs_polar["Region"]]
+        usgs_codes = [
+            str(code) if "RegionCode" in usgs_polar.columns else ""
+            for code in (
+                usgs_polar.get("RegionCode", [""] * n_usgs)
+                if "RegionCode" in usgs_polar.columns
+                else [""] * n_usgs
+            )
+        ]
+        usgs_areas = [
+            float(area)
+            for area in (
+                usgs_polar.get("Area_km2", [0.0] * n_usgs)
+                if "Area_km2" in usgs_polar.columns
+                else [0.0] * n_usgs
+            )
+        ]
+
+        # Per-site: which polygon contains us (if any), and signed
+        # distance to the nearest polygon edge in the polar-metres frame.
+        per_site_usgs: list[PerSiteUSGSResult] = []
+        site_inside_usgs = np.zeros(n_sites, dtype=bool)
+        site_to_nearest_usgs_km = np.zeros(n_sites, dtype=np.float64)
+        for i, pt in enumerate(site_points_polar):
+            containing_idx: int | None = None
+            for poly_idx, polygon in enumerate(usgs_polygons_polar):
+                if polygon.contains(pt):
+                    containing_idx = poly_idx
+                    break
+            inside = containing_idx is not None
+            site_inside_usgs[i] = inside
+            # Distance from site to *nearest* polygon (0 when inside any
+            # polygon; metres-to-boundary otherwise). Use the unsigned
+            # boundary distance; "inside" status carries the sign info
+            # separately via the boolean.
+            distances_m = np.array([polygon.distance(pt) for polygon in usgs_polygons_polar])
+            if inside:
+                nearest_idx = containing_idx
+                site_to_nearest_usgs_km[i] = 0.0
+            else:
+                nearest_idx = int(distances_m.argmin())
+                site_to_nearest_usgs_km[i] = float(distances_m[nearest_idx]) / 1000.0
+            per_site_usgs.append(
+                {
+                    "site_id": str(top_sites["site_id"].iloc[i]),
+                    "rank": int(top_sites["rank"].iloc[i]),
+                    "inside_any_usgs_polygon": bool(inside),
+                    "containing_polygon_name": usgs_names[containing_idx]
+                    if containing_idx is not None
+                    else None,
+                    "nearest_polygon_name": usgs_names[nearest_idx],
+                    "distance_to_nearest_polygon_km": float(site_to_nearest_usgs_km[i]),
+                }
+            )
+
+        # Per-region: nearest top site, distance from polygon to it,
+        # whether the polygon contains any top site.
+        per_usgs_region: list[PerUSGSRegionResult] = []
+        region_contains_usgs = np.zeros(n_usgs, dtype=bool)
+        for r, polygon in enumerate(usgs_polygons_polar):
+            contains_any = False
+            for site_pt in site_points_polar:
+                if polygon.contains(site_pt):
+                    contains_any = True
+                    break
+            region_contains_usgs[r] = contains_any
+            site_distances_m = np.array([polygon.distance(pt) for pt in site_points_polar])
+            nearest_site_idx = int(site_distances_m.argmin())
+            distance_to_polygon_km = float(site_distances_m[nearest_site_idx]) / 1000.0
+            per_usgs_region.append(
+                {
+                    "name": usgs_names[r],
+                    "code": usgs_codes[r],
+                    "area_km2": usgs_areas[r],
+                    "nearest_top_site_id": str(top_sites["site_id"].iloc[nearest_site_idx]),
+                    "nearest_top_site_rank": int(top_sites["rank"].iloc[nearest_site_idx]),
+                    "distance_to_polygon_km": distance_to_polygon_km,
+                    "contains_top_site": bool(contains_any),
+                }
+            )
+
+        n_inside_usgs = int(site_inside_usgs.sum())
+        n_regions_inside_usgs = int(region_contains_usgs.sum())
+        median_dist_km = float(np.median(site_to_nearest_usgs_km))
+
+        result["n_usgs_regions"] = n_usgs
+        result["sites_inside_any_usgs_polygon"] = n_inside_usgs
+        result["regions_with_top_site_inside_usgs_polygon"] = n_regions_inside_usgs
+        result["median_distance_to_nearest_usgs_polygon_km"] = median_dist_km
+        result["per_usgs_region"] = per_usgs_region
+        result["per_site_usgs"] = per_site_usgs
+
+    return result
+
 
 def render_summary(result: ProximityResult) -> str:
-    """Two-table stdout block for ``selene validate``.
+    """Three-table stdout block for ``selene validate``.
 
-    Prints the centroid-distance summary first (legacy headline), then
-    the polygon-inside summary (week 8 headline). Per-region table at
-    the bottom shows both metrics side by side.
+    Prints, in order: the centroid-distance summary (legacy week 4),
+    the 15 km disk inside/outside summary (week 8), and the USGS
+    polygon inside/outside summary (week 10) — when USGS polygons
+    were supplied to :func:`proximity_analysis`. The USGS polygon
+    table is the headline result; the disk and centroid tables are
+    kept for context and continuity with the v1.0.0 / v1.1.0 history.
+    Per-region tables at the bottom show each metric family.
     """
     n_sites = result["n_top_sites"]
     n_regions = result["n_nasa_regions"]
@@ -265,12 +411,29 @@ def render_summary(result: ProximityResult) -> str:
     label = f"  within {near_km:.0f} km of any centroid:"
     lines.append(f"{label:<48}{near:>3} / {n_sites}")
     lines.append("")
-    lines.append("polygon-inside metrics (week 8):")
+    lines.append("15 km disk metrics (week 8):")
     lines.append(f"  inside any 15 km disk:                          {inside:>3} / {n_sites}")
     lines.append(f"  regions containing a top site:                  {contains:>3} / {n_regions}")
     lines.append(
         f"  regions with a top site within 1 disk radius:   {within_disk:>3} / {n_regions}"
     )
+
+    has_usgs = "n_usgs_regions" in result
+    if has_usgs:
+        n_usgs = result["n_usgs_regions"]
+        usgs_inside = result["sites_inside_any_usgs_polygon"]
+        usgs_contains = result["regions_with_top_site_inside_usgs_polygon"]
+        median_km = result["median_distance_to_nearest_usgs_polygon_km"]
+        lines.append("")
+        lines.append("USGS polygon metrics (week 10, headline):")
+        lines.append(
+            f"  inside any USGS polygon:                        {usgs_inside:>3} / {n_sites}"
+        )
+        lines.append(
+            f"  USGS regions containing a top site:             {usgs_contains:>3} / {n_usgs}"
+        )
+        lines.append(f"  median distance to nearest USGS polygon (km):   {median_km:>7.1f}")
+
     lines.append("")
     lines.append(
         f"{'NASA region':<22} {'nearest':<10} {'dist-c (km)':>11} {'dist-edge (km)':>14}  inside?"
@@ -281,4 +444,19 @@ def render_summary(result: ProximityResult) -> str:
             f"{row['name']:<22} {row['nearest_site_id']:<10} "
             f"{row['distance_km']:>11.1f} {row['distance_to_edge_km']:>14.1f}  {flag}"
         )
+
+    if has_usgs:
+        lines.append("")
+        lines.append("USGS polygon per-region (week 10):")
+        lines.append(
+            f"{'USGS region':<22} {'area km²':>9} {'nearest':<10} {'dist (km)':>10}  contains?"
+        )
+        for row in result["per_usgs_region"]:
+            flag = "yes" if row["contains_top_site"] else "no"
+            lines.append(
+                f"{row['name']:<22} {row['area_km2']:>9.1f} "
+                f"{row['nearest_top_site_id']:<10} "
+                f"{row['distance_to_polygon_km']:>10.1f}  {flag}"
+            )
+
     return "\n".join(lines)

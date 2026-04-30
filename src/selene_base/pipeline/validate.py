@@ -20,7 +20,10 @@ from selene_base.validation.comparison import (
     proximity_analysis,
     render_summary,
 )
-from selene_base.validation.nasa_regions import regions_to_geodataframe
+from selene_base.validation.nasa_regions import (
+    regions_polygons_to_geodataframe,
+    regions_to_geodataframe,
+)
 
 DEFAULT_OUTPUTS_DIR = Path("data/outputs")
 
@@ -53,8 +56,12 @@ def run(
 
     sites = gpd.read_file(sites_path)
     nasa = regions_to_geodataframe()
-    echo(f"[validate] {len(sites)} top sites vs {len(nasa)} NASA regions")
-    result = proximity_analysis(sites, nasa, near_km=near_km)
+    nasa_polygons = regions_polygons_to_geodataframe()
+    echo(
+        f"[validate] {len(sites)} top sites vs {len(nasa)} NASA centroid disks "
+        f"and {len(nasa_polygons)} USGS polygons"
+    )
+    result = proximity_analysis(sites, nasa, near_km=near_km, nasa_regions_polygons=nasa_polygons)
 
     json_path = outputs_dir / "validation.json"
     json_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
