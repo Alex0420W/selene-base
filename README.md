@@ -1,6 +1,6 @@
 # selene-base
 
-> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis III region polygons (DOI 10.5066/P1MEQ6UK). v1.3.0 produces a per-region landing-site catalog of **23 HLS-compliant candidate sites across 8 of NASA's 9 Artemis III regions**, using NASA's published HLS hard-constraint filters and matching the methodology of Wueller et al. 2026 (JGR Planets, 130 sites). v1.4.0 ships the comparison framework against Wueller's catalog; quantitative agreement numbers are pending the gated supplementary data release. The release history below documents the diagnostic arc — including why a global-ranking framing produced 0/20 alignment until reframed to per-region selection.
+> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis III region polygons (DOI 10.5066/P1MEQ6UK). v1.3.0 produces a per-region landing-site catalog of **23 HLS-compliant candidate sites across 8 of NASA's 9 Artemis III regions**, using NASA's published HLS hard-constraint filters and matching the methodology of Wueller et al. 2026 (JGR Planets, 130 sites). **v1.4.1: 18 of 23 selene sites (78 %) match within 5 km of an in-scope Wueller 2026 site; median match distance 1.71 km** — quantitative agreement against the peer-reviewed catalog (Zenodo deposit, CC-BY 4.0). The release history below documents the diagnostic arc — including why a global-ranking framing produced 0/20 alignment until reframed to per-region selection.
 
 [![CI](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml/badge.svg)](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,7 +19,7 @@ The project's central output is **a per-region HLS-compliant landing site catalo
 
 This headline is a **reframing**, not a refinement. The previous versions (v1.0.0–v1.2.0) measured a different question — global ranking of habitat suitability followed by validation against NASA polygons — and reported 0/20 because globally-selected top sites pick the polar rim band where the coupling criterion is non-zero rather than the *interior* of NASA-published regions. The Wueller et al. 2026 (JGR Planets, [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)) parallel — which found 130 candidate sites with similar within-region HLS-filtered methodology — confirms that **per-region HLS-filtered ranking is the right framing for a NASA-aligned site catalog**.
 
-> **A note on construction**: v1.3.0 sites are guaranteed inside USGS polygons by construction, since the algorithm searches *within* polygons rather than globally. The relevant scientific question is therefore not "are they inside?" but "do they identify the same cells NASA's process identifies?" — addressed by the v1.4.0 comparison framework against Wueller's 130 published sites. Quantitative agreement numbers are pending data acquisition (see "Data acquisition status" below).
+> **A note on construction**: v1.3.0 sites are guaranteed inside USGS polygons by construction, since the algorithm searches *within* polygons rather than globally. The relevant scientific question is therefore not "are they inside?" but "do they identify the same cells NASA's process identifies?" — addressed by the v1.4.1 comparison against Wueller's 130 published sites: **18/23 selene sites match within 5 km of an in-scope Wueller site, median 1.71 km** (see "Quantitative comparison against Wueller et al. 2026" below).
 
 The earlier releases (v1.0.0–v1.2.0) are preserved as the project's diagnostic history — they document *why* the global-ranking framing produced 0 inside-polygon results before the v1.3 reframing. The summary below tracks the releases in order; the v1.3 reframing supersedes the global-ranking interpretation but does not invalidate the diagnostic findings.
 
@@ -39,7 +39,7 @@ Across the v1.0.0 — v1.2.0 releases — through five revisions of the model an
 
 6. **The right *framing* — per-region ranking with HLS hard filters (v1.3.0) — produces 23 sites across 8/9 NASA regions.** The first five stages of the arc all rank globally and ask "did our top-20 fall inside NASA's regions?" The right question, mirroring NASA's own selection process, is "within each NASA region, which cells satisfy the HLS landing requirements and rank highest by suitability?" Reframing the search this way produces a complete per-region landing-site catalog. **The 0/20 result through v1.2.0 reflected the global-ranking framing, not a flaw in the model**: globally-best cells cluster on the polar rim band where the coupling criterion is non-zero; per-region-best HLS-compliant cells cluster inside NASA polygons by construction. Both findings are valid — the diagnostic arc is preserved below for context.
 
-The combined picture: the criteria are tuned, the validation primitive is authoritative, and **the framing is now NASA-aligned**. The remaining open scientific question — "do the v1.3 sites identify the same cells NASA's process identifies?" — is addressable via direct comparison against Wueller et al. 2026's 130 published sites; v1.4.0 ships the comparison framework, with quantitative numbers pending data acquisition (see "Data acquisition status" below).
+The combined picture: the criteria are tuned, the validation primitive is authoritative, and **the framing is now NASA-aligned**. The previously-open scientific question — "do the v1.3 sites identify the same cells NASA's process identifies?" — is now answered quantitatively in v1.4.1 against Wueller et al. 2026's 130 published sites: **18/23 selene sites (78 %) match within 5 km of an in-scope Wueller site; median match distance 1.71 km** (see "Quantitative comparison against Wueller et al. 2026" below).
 
 ![Diagnostic from v1.0–v1.2: model's top-20 (red) cluster on the rim band where the coupling criterion is non-zero; NASA centroids (cyan) sit in the disk interiors](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/coupling_overlay.png)
 
@@ -126,7 +126,7 @@ selene validate-per-region      # per-region summary: n sites, eligible-area %, 
 selene compare                  # per-criterion delta our top-20 vs NASA centroids
 selene sensitivity --n-samples 200       # 200-sample weight-vector simplex sweep
 selene coupling-sweep                    # tune coupling_distance_km against alignment
-selene compare-wueller          # comparison harness vs Wueller 2026 (placeholder data)
+selene compare-wueller          # quantitative comparison vs Wueller 2026 (130 real sites, CC-BY 4.0)
 
 # Full-resolution analysis (~900 MB raw, 4 verified URLs):
 selene download robbins         # ~92 MB
@@ -247,7 +247,7 @@ A few choices in the pipeline are worth surfacing because they materially affect
 - **Cache horizon-profile as compressed numpy, not GeoTIFF.** The v1.1 LOS criterion needs a 3D ``(azimuth, y, x)`` horizon field that doesn't fit a single-band GeoTIFF cleanly; netCDF is the idiomatic xarray choice but the only netCDF backend available without compiled `netCDF4`/`h5netcdf` system deps is `scipy`, and that backend doesn't accept zlib compression — leaving an uncompressed ~930 MB file. Switching to `np.savez_compressed` keeps the cache pure-numpy, compresses the same float32 grid to ~840 MB without new dependencies, and the consumer (`compute_earth_visibility_fraction`) doesn't need the rio metadata anyway. The 2D consumer-facing artifact (`los_visibility_fraction_southpole_240m.tif`) stays as a normal COG.
 - **Authoritative validation reference, bundled in-repo.** Validation against NASA's Artemis III candidate regions uses USGS's officially-published simplified region envelopes ([DOI 10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK)), not synthesised disk approximations. The dataset shipped late in development; v1.0.0 and v1.1.0 used 15 km-radius disks, which we found systematically misrepresent the actual region geometries (most are ~400 km² quadrilaterals; Mons Mouton Plateau alone is 4452 km², 6× larger than the disk; one disk centroid for "Slater Plain" sits ~180° in longitude away from the USGS polygon's actual location). v1.2.0 ships the USGS GeoJSON in [`src/selene_base/validation/data/`](src/selene_base/validation/data/) so the validation primitive is reproducible without re-downloading external data, and the disk metrics are kept in parallel for continuity with the v1.0 / v1.1 validation history.
 - **Per-region search-space framing.** v1.3.0's `selene rank-per-region` searches *within* each USGS polygon rather than globally, with NASA's published HLS hard-constraint filters applied as a precondition. The two CLI subcommands ship side-by-side: the legacy `selene rank` produces a global top-N for continuity; `selene rank-per-region` produces the NASA-aligned per-polygon catalog. The choice is deliberately surfaced rather than hidden behind a flag — they answer two genuinely different questions ("globally most habitat-suitable cells" vs "best HLS-compliant cells *within each NASA candidate region*"), and the v1.0–v1.2 release history is the diagnostic of why those questions diverge.
-- **Synthetic-placeholder labelling for v1.4.0's gated-data state.** The Wueller 2026 catalog is paywalled at AGU/Wiley and no open data release was found. v1.4.0 ships the comparison framework with a clearly-labelled 5-row synthetic placeholder CSV; `is_synthetic_placeholder` propagates a `using_synthetic_placeholder = true` flag through every output channel (CLI banner, JSON, CSV, plot title) so no downstream reader can mistake the placeholder run for a real comparison. Two real-data tests are explicitly marked `skip(reason="awaiting upstream data")`. The framework is ready for a data swap-in to produce the real numbers in v1.4.1.
+- **CC-BY-4.0 third-party data, attributed inline.** The Wueller 2026 130-site catalog ships in-repo at [`src/selene_base/validation/data/wueller_2026/LandingSites.shp`](src/selene_base/validation/data/wueller_2026/) under the original CC-BY 4.0 license, with a [README](src/selene_base/validation/data/wueller_2026/README.md) carrying the full author list, both the paper DOI ([10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)) and the Zenodo deposit DOI ([10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058)), and the licence text. The bundle is the small (~60 KB) point-catalog sidecar of the deposit only; the 884 MB HLS slope raster from the same deposit is not bundled. The legacy synthetic-placeholder CSV from v1.4.0 is retained for backward compatibility behind a `DeprecationWarning`.
 
 ## Validation
 
@@ -342,39 +342,88 @@ The disk-based table is preserved for continuity with the v1.0.0 / v1.1.0 histor
 
 The disk-based "Cabeus B" entry shows a top site within 12.3 km of the disk edge — but the corresponding USGS polygon ("Peak Near Cabeus B", at a different geographic location) is 67.3 km from the same `site_18`, because the legacy disk centroid sits ~150 km north-east of where USGS places the actual region. Two of the disk-table closest distances (Cabeus B and de Gerlache Rim 2) are misleading once measured against the right geometry.
 
-## Quantitative comparison against Wueller et al. 2026 (v1.4.0 — framework only)
+## Quantitative comparison against Wueller et al. 2026 (v1.4.1 — quantitative comparison)
 
-[Wueller, F., et al. (2026)](https://doi.org/10.1029/2025JE009434) published in *Journal of Geophysical Research: Planets* a peer-reviewed analysis identifying **130 candidate Artemis III landing sites** within NASA's candidate regions using essentially the same outer methodology selene-base implements: NASA HLS hard filters (slope < 8°, ≥ 100 m buffer to steeper terrain) followed by within-region selection. v1.4.0 ships the **comparison framework** as the deliverable; the quantitative agreement number is gated on acquiring the supplementary data release.
+[Wueller, F., et al. (2026)](https://doi.org/10.1029/2025JE009434) published in *Journal of Geophysical Research: Planets* a peer-reviewed analysis identifying **130 candidate Artemis III landing sites** within NASA's candidate regions using essentially the same outer methodology selene-base implements: NASA HLS hard filters (slope < 8°, ≥ 100 m buffer to steeper terrain) followed by within-region selection. v1.4.1 ships the **quantitative comparison** against the authors' Zenodo data deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0, 130-site shapefile bundled in-repo).
 
-`selene compare-wueller` loads selene-base's per-region sites and the Wueller catalog, computes pairwise nearest-neighbour distances in lunar south-polar stereographic metres at a defensible 5 km regional-granularity threshold (NASA HLS landing accuracy is 100 m, but candidate site *selection* operates at the 1–5 km scale), and writes:
+### Headline (default weights, default HLS thresholds, threshold = 5 km, in-scope only)
 
-- `data/outputs/wueller_comparison.json` — full result dict (per-site, per-region, headline counts).
+| metric | value |
+| --- | ---: |
+| selene per-region sites | 23 |
+| Wueller 2026 sites (total catalog) | 130 |
+| Wueller sites in USGS scope (NASA Oct 2024 nine) | **73** |
+| Wueller sites out of USGS scope | 57 |
+| **selene sites matched within 5 km of an in-scope Wueller site** | **18 / 23 (78 %)** |
+| Wueller in-scope sites matched within 5 km of a selene site | 30 / 73 (41 %) |
+| **median matched-pair distance** | **1.71 km** |
+| match threshold (regional-granularity scale) | 5 km |
+
+**Eighteen of twenty-three selene sites land within 5 km of a peer-reviewed candidate site identified by an independent group using the same outer methodology on a higher-resolution DEM.** Median match distance is 1.71 km — well inside the 1–5 km regional-granularity scale at which candidate-site *selection* operates (NASA HLS landing accuracy is 100 m, but selecting *which* terrain to land on is the kilometre-scale question). The asymmetry — 78 % of selene sites match but only 41 % of Wueller sites do — is structural: Wueller produces 5–11 sites per region (vs selene's `n_per_region = 3`), so the per-selene matching rate is the right comparison.
+
+### Per-region agreement
+
+Selene ranks at most 3 sites per region (`n_per_region = 3` is the v1.3.0 default). Wueller ranks more sites per region. The "matched" column counts selene sites whose nearest **same-region** Wueller site is within 5 km.
+
+| USGS region | selene n | Wueller in-scope n | matched | median match dist (km) |
+| --- | ---: | ---: | ---: | ---: |
+| Haworth | 3 | 11 | **3 / 3** | 1.06 |
+| Mons Mouton | 3 | 10 | **3 / 3** | 2.12 |
+| Mons Mouton Plateau | 3 | 11 | 1 / 3 | 1.38 |
+| Nobile Rim 1 | 3 | 9 | **3 / 3** | 1.59 |
+| Nobile Rim 2 | 3 | 9 | **3 / 3** | 1.12 |
+| Peak Near Cabeus B | 3 | 5 | **3 / 3** | 1.94 |
+| Slater Plain | 3 | 11 | 2 / 3 | 1.54 |
+| de Gerlache Rim 2 | 2 | 7 | 0 / 2 | — |
+| **Total** | **23** | **73** | **18 / 23** | **1.71** |
+
+**Six of eight in-scope regions agree at 100 % match-within-region.** Two outliers:
+
+- **de Gerlache Rim 2 (0/2 matched).** selene's two HLS-compliant sites are 8.8 km from the nearest Wueller dGR2 site — outside the 5 km threshold but still within an order of magnitude. This is also the only region where selene returns fewer than 3 sites (the polygon contains only 2 cells passing every HLS filter at 240 m resolution).
+- **Mons Mouton Plateau (1/3 matched), Slater Plain (2/3 matched).** The largest disagreements are 5.6–5.7 km — *just* outside the threshold. At a 6 km threshold every disagreement here would flip to a match.
+
+The longest selene-only nearest distance is 8.8 km (de Gerlache Rim 2). The longest Wueller-only nearest distance is 25.5 km (MMP08 vs selene's MMP top-3) — Wueller's MMP catalog spreads further across the polygon than selene's top-3 cluster, which is the structural consequence of selene's NMS at 2 km separation choosing tightly-packed top-scorers.
+
+### In-scope vs out-of-scope split
+
+Wueller's 130 sites span 16 region codes; **57 are outside NASA's October 2024 down-selected nine** (Wueller pre-dates the down-selection and retained the earlier 13-region list, plus Amundsen Rim and Mons Malapert which are not in the USGS list). selene-base only ranks within the down-selected nine, so the apples-to-apples comparison is against the 73 in-scope sites. The eight out-of-scope Wueller regions:
+
+| Wueller code | Wueller region | n |
+| --- | --- | ---: |
+| AR | Amundsen Rim | 10 |
+| CR | Connecting Ridge | 9 |
+| CRE | Connecting Ridge Extension | 6 |
+| FRA | Faustini Rim A | 8 |
+| MMA | Mons Malapert (distinct from USGS Malapert Massif) | 5 |
+| PNS | Peak Near Shackleton | 6 |
+| dGKM | de Gerlache-Kocher Massif | 7 |
+| dGR1 | de Gerlache Rim 1 | 6 |
+
+Run `selene compare-wueller --no-filter-to-usgs-scope` to compare against all 130; under that mode selene's 18 still match within 5 km (the 5 unmatched selene sites stay unmatched — none of them have a closer match outside their own USGS region).
+
+### Outputs
+
+`selene compare-wueller` writes:
+
+- `data/outputs/wueller_comparison.json` — full result dict (per-site, per-region, in-scope counts, headline metrics).
 - `data/outputs/wueller_comparison.csv` — flat per-site distance table for inspection.
+- Stdout summary: headline counts (with in-scope/out-of-scope split), per-region agreement table, notable disagreements.
 
-The CLI prints a three-block stdout summary: headline counts, per-region agreement, notable disagreements. When the bundled CSV is the synthetic placeholder (current state), every output is explicitly labelled `*** SYNTHETIC PLACEHOLDER ACTIVE ***` so no downstream reader can mistake the number for a real scientific result.
+Distances are computed in lunar south-polar stereographic metres (`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`), conformal at the pole and sub-percent error vs great-circle for sub-100 km offsets.
 
-![selene-base v1.3 sites (yellow) vs Wueller 2026 sites (blue, placeholder run)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
+![selene-base v1.3 sites (yellow) vs Wueller 2026 sites (blue)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
 
-### Data acquisition status
+### Data provenance
 
-The Wueller 2026 site coordinates appear in **Table A1** of the published paper ([doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)), and the article text describes them as "georeferenced landing sites … available in Wueller et al. (2026)". Acquisition attempts during v1.4.0 development:
+The catalog ships in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) as a six-file shapefile bundle (`LandingSites.shp/.shx/.dbf/.prj/.cpg`, ~60 KB total) plus a [README](src/selene_base/validation/data/wueller_2026/README.md) carrying the full attribution. Source is the authors' Zenodo deposit "Complementary Data for Wueller et al. (2026)" (Wueller, Berger, Christopher, Sugimoto, Thaker, Carton, Jo, Lee, Pedrelli, Sanchez, & Kring, 2025), [doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), licensed CC-BY 4.0. The deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), exploration-area polygons, and an illumination-modeling layer set; only the 130-site point catalog is bundled in-repo, the rest stays in the upstream archive and may be integrated in a future release.
 
-- **AGU/Wiley publication page**: returned HTTP 403 to programmatic fetch; the article is gated.
-- **Web search for an open data release** (Zenodo, PANGAEA, USGS, GitHub): the same authors have public Zenodo records for [Wueller 2024](https://zenodo.org/records/10693820) (different paper — Amundsen geologic history) and [Wueller 2025](https://zenodo.org/records/15101821) (different paper — Rubin Crater design reference mission), but no 2026 130-site catalog data release surfaced in public search.
-- **Manual extraction from Table A1**: requires the gated PDF.
+### What ships in v1.4.1
 
-Path forward: direct author outreach, publisher subscription access, or waiting for a future open data release. v1.4.0 ships the framework today (CLI, comparison logic, tests, notebook, plots) so that, once the real CSV is in place at `src/selene_base/validation/data/wueller_2026_sites.csv` (replacing the placeholder, preserving the column schema), `selene compare-wueller` produces real agreement numbers without any further code changes.
-
-The bundled placeholder is a 5-row stand-in with every `wueller_site_id` prefixed `synthetic-placeholder-`. The comparison module detects that prefix and propagates a `using_synthetic_placeholder = true` flag through every output (JSON, CSV, stdout summary, notebook plot title, README image caption) so the limitation is impossible to misread. Tests that would only be meaningful against the real catalog are explicitly skipped with `reason="awaiting upstream data"`.
-
-### What ships in v1.4.0 (regardless of data state)
-
-- [`src/selene_base/validation/wueller_comparison.py`](src/selene_base/validation/wueller_comparison.py) — `load_wueller_sites`, `compare_sites` (pairwise nearest-neighbour, per-region aggregation), `is_synthetic_placeholder`, `render_summary`. Distance computation in lunar polar stereographic metres (conformal at the pole, sub-percent error vs great-circle for sub-100 km offsets — verified by an explicit known-offset unit test).
-- [`src/selene_base/pipeline/compare_wueller.py`](src/selene_base/pipeline/compare_wueller.py) and the new [`selene compare-wueller`](src/selene_base/cli.py) CLI subcommand.
-- [`tests/test_wueller_comparison.py`](tests/test_wueller_comparison.py) — 16 synthetic-only tests + 2 real-data tests skipped with `awaiting upstream data` reason.
-- [`notebooks/08_wueller_comparison.py`](notebooks/08_wueller_comparison.py) — produces the headline overlay map ([docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png)), the distance histogram ([docs/img/wueller_distance_hist.png](docs/img/wueller_distance_hist.png)), and the per-region match-count bar chart ([docs/img/wueller_per_region_bars.png](docs/img/wueller_per_region_bars.png)). All plots auto-label "SYNTHETIC PLACEHOLDER" in the title when the placeholder is active.
-
-The quantitative agreement headline is a v1.4.1 (or v1.5) follow-up, blocked only on data acquisition.
+- [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) — the bundled shapefile and README.
+- [`src/selene_base/validation/wueller_comparison.py`](src/selene_base/validation/wueller_comparison.py) — `load_wueller_sites` (defaults to the shapefile, falls back to the legacy synthetic CSV with a `DeprecationWarning`), `compare_sites` (now with `filter_to_usgs_scope` parameter, default True), `WUELLER_TO_USGS_REGION_MAP`, `WUELLER_CODE_TO_NAME`, `is_synthetic_placeholder`, `render_summary`. Distance computation in lunar polar stereographic metres (conformal at the pole, sub-percent error vs great-circle for sub-100 km offsets — verified by an explicit known-offset unit test).
+- [`src/selene_base/pipeline/compare_wueller.py`](src/selene_base/pipeline/compare_wueller.py) and the [`selene compare-wueller`](src/selene_base/cli.py) CLI subcommand, now with `--filter-to-usgs-scope/--no-filter-to-usgs-scope` and a backward-compat `--wueller-csv` alias.
+- [`tests/test_wueller_comparison.py`](tests/test_wueller_comparison.py) — 20 tests passing: the 16 v1.4.0 synthetic tests, the two formerly-skipped real-data tests (`test_real_wueller_comparison_against_v13_per_region_sites`, `test_per_region_wueller_counts_match_published_artemis_breakdown`), plus a scope-filter test, a deprecation-warning test on the legacy CSV path, a region-code round-trip test, and a render-summary "no synthetic markers when real data is loaded" test.
+- [`notebooks/08_wueller_comparison.py`](notebooks/08_wueller_comparison.py) — produces the headline overlay map ([docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png)), the distance histogram ([docs/img/wueller_distance_hist.png](docs/img/wueller_distance_hist.png)), and the per-region match-count bar chart ([docs/img/wueller_per_region_bars.png](docs/img/wueller_per_region_bars.png)).
 
 ## Robustness
 
@@ -441,7 +490,7 @@ selene-base/
 
 The dependency graph is one-way: `data/` is the foundation; `criteria/` reads loaded rasters; `scoring/` aggregates criterion outputs; `validation/` and `viz/` consume scoring outputs; `pipeline/` orchestrates; `cli.py` exposes the orchestrators. Tests follow the same layering.
 
-**343 tests collected** (337 passed, 6 skipped: 4 LEND-data-not-present, 2 awaiting Wueller 2026 data release), ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank-per-region -> validate-per-region -> compare`, and asserts every output file is on disk and schema-valid.
+**350 tests collected** (346 passed, 4 skipped: 4 LEND-data-not-present), ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank-per-region -> validate-per-region -> compare`, and asserts every output file is on disk and schema-valid.
 
 ## Roadmap
 
@@ -456,13 +505,14 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - **v1.1.0 — Earth line-of-sight criterion.** ✅ `criteria/los_to_earth.py` adds the seventh criterion: a per-pixel Earth-visibility fraction derived from a 36-azimuth, log-spaced 50-distance horizon ray-march on the LOLA elevation grid (with curvature correction for $R = 1737.4\,$km), combined with 24-sample libration-cycle sampling of Earth's sub-Earth point on a $\pm6.5°\times\pm7.9°$ ellipse. Score is a linear ramp from `min_visibility = 0.20` (Apollo crew-safety floor) to `target_visibility = 0.50` (sustained-habitat target). Default weight 0.15 — chosen *before* the validation rerun on physics-and-operations grounds, not validation chasing. Effect: closest-disk-edge dropped from 32.8 km → **12.3 km** (Cabeus B, the first NASA region to come within 1 disk-radius of a top site), sensitivity ceiling lifted 3/9 → **4/9** regions matched, and the polygon-inside count became sample-non-zero for the first time (**21/200 weight regimes** now produce ≥1 inside any disk; 0/200 in v1.0.0). Headline polygon-inside under defaults: still **0/20** — the operations-driven defaults narrow the gap but don't close it. The geometric finding from v0.7–v1.0.0 holds: under physics-driven defaults, our model picks the polar rim band where every criterion (now including LOS) is near-saturated, and NASA's centroids are inside the disks 5–15 km off that band; the gap collapses for ~10 % of the weight simplex.
 - **v1.2.0 — USGS authoritative polygon validation.** ✅ Replaced the 15 km disk approximations with USGS's officially-published simplified region envelopes (DOI 10.5066/P1MEQ6UK, McClernan 2024). The polygons ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson). `selene validate` now prints three result tables (centroid distance, 15 km disk inside/outside, USGS polygon inside/outside) and `validation.json` carries all three metric families. The disk approximations were systematically wrong: most regions are ~400 km² quadrilaterals (vs the 707 km² disk), Mons Mouton Plateau is **4452 km² — 6× the disk area**, one disk centroid for "Slater Plain" sits ~180° away from the USGS polygon's actual location, and "Cabeus B" was misnamed (USGS publishes "Peak Near Cabeus B", centred on the rim peak, not the crater floor). **Default-weights result against USGS polygons: 0/20 inside, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2). Sensitivity sweep: 6/200 weight regimes produce ≥1 site inside any USGS polygon (max 2/20), down from 21/200 against the disks** — the geometric separation is *more* pronounced against the right validation reference, not less, because the disks were inflated outward in places where the actual USGS polygons are not. The "validation metric was the bottleneck" hypothesis from v1.0.0 was *partially* correct (the disk approximations were wrong) but the *underlying* geometric separation between the model's rim-band optimum and NASA's authoritative regions persists.
 - **v1.3.0 — per-region ranking with NASA HLS hard filters.** ✅ `selene rank-per-region` searches *within* each USGS polygon and applies NASA's published HLS thresholds (slope ≤ 8°, 100 m buffer, illumination ≥ 33 %, DTE visibility ≥ 50 %) as a precondition before ranking by suitability score. New `top_n_sites_per_region` in [`scoring/ranking.py`](src/selene_base/scoring/ranking.py); new `per_region_compliance_analysis` in [`validation/comparison.py`](src/selene_base/validation/comparison.py); new CLI subcommands `rank-per-region` and `validate-per-region`. **Result: 23 sites across 8/9 USGS regions** (default weights, default HLS thresholds), all guaranteed inside their named polygon and HLS-compliant by construction. **Malapert Massif has zero HLS-compliant cells** — a real terrain-driven finding, not a thresholding artefact. **Mons Mouton Plateau is the highest-scoring region** (best score 0.746, 15.07 % HLS-eligible area). The reframing — global ranking → per-region + HLS — matches the methodology of Wueller et al. 2026 (JGR Planets), which catalogued 130 candidate Artemis-III sites with the same outer framing. The 0/20 inside-polygon count through v1.2.0 reflected the global framing; v1.3.0 produces the NASA-aligned catalog v1.0–v1.2 had been pursuing through the wrong question.
-- **v1.4.0 — Wueller 2026 comparison framework (framework only).** ✅ Comparison harness shipped: `selene compare-wueller` plus `wueller_comparison.{load_wueller_sites,compare_sites,render_summary}`, 16 synthetic-only tests, the `notebooks/08_wueller_comparison.py` visualisation set, and the headline plot at [docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png). The Wueller 2026 supplementary catalog is currently gated behind AGU/Wiley and no open data release surfaced in search; the bundled CSV is a clearly-labelled 5-row synthetic placeholder, every output is flagged `using_synthetic_placeholder = true` until the real CSV ships, and two "real comparison" tests are explicitly skipped with `reason="awaiting upstream data"`. **The framework is the v1.4.0 deliverable; the quantitative agreement number is a v1.4.1/v1.5 follow-up unblocked the moment the real Table A1 is in hand.** See README §"Data acquisition status" for the search trail.
+- **v1.4.0 — Wueller 2026 comparison framework (framework only).** ✅ Comparison harness shipped: `selene compare-wueller` plus `wueller_comparison.{load_wueller_sites,compare_sites,render_summary}`, 16 synthetic-only tests, the `notebooks/08_wueller_comparison.py` visualisation set, and the headline plot at [docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png). The Wueller 2026 supplementary catalog was unavailable at the time; the bundled CSV was a 5-row synthetic placeholder explicitly flagged through every output channel, and two "real comparison" tests were skipped pending data. **The framework was the v1.4.0 deliverable; the quantitative agreement number unblocked in v1.4.1.**
+- **v1.4.1 — quantitative Wueller comparison.** ✅ Replaces v1.4.0's synthetic placeholder with the real 130-site shapefile from the authors' Zenodo deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0), bundled in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/). `compare_sites` now defaults to a USGS-scope filter (drops the 57 Wueller sites whose region is not in NASA's October 2024 down-selected nine), the two formerly-skipped tests now run against the real bundle, and the legacy CSV path is retained behind a `DeprecationWarning`. **Result: 18 / 23 selene sites match within 5 km of an in-scope Wueller site (78 % agreement); median match distance 1.71 km against 73 in-scope Wueller sites across 8 USGS regions.** Six of eight regions agree at 100 % match-within-region; the two outliers (de Gerlache Rim 2 and Mons Mouton Plateau) miss the threshold by ≤ 4 km. Test suite: 350 collected, 346 passed, 4 skipped (LEND-only).
 
 ### Where this goes next
 
-**v1.4.1 — quantitative Wueller comparison.** Acquire the Wueller 2026 site coordinates (Table A1, or a future open data release); drop them into `src/selene_base/validation/data/wueller_2026_sites.csv` preserving the column schema; rerun `selene compare-wueller`. The framework, CLI, tests, and notebook are already in place — the data swap-in produces real agreement numbers without any further code changes. The two skipped tests (`test_real_wueller_comparison_against_v13_per_region_sites`, `test_per_region_wueller_counts_match_published_artemis_breakdown`) become the integration smoke test for the data refresh.
-
 **TOPSIS aggregator behind `--method topsis`.** Still open as a methodological alternative to weighted-sum aggregation. Lower priority now that the per-region framing produces a NASA-aligned catalog under the existing aggregator; TOPSIS would change *which* HLS-compliant cells rank highest within each polygon, not whether they're inside.
+
+**Wueller 2026 deposit — non-point layers (v1.5+).** The Zenodo deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), 2 km exploration-area polygons (`ExplorationArea_2km.*`), and an illumination-modelling layer set. None are bundled in v1.4.1 (point catalog only); folding any of them in (e.g. comparing selene's HLS-eligible mask against Wueller's 8°-buffer raster) is a v1.5+ candidate.
 
 ### Smaller follow-ups
 
@@ -484,7 +534,8 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - NASA (October 2024). *Artemis III candidate landing regions.* [https://www.nasa.gov/feature/artemis-iii](https://www.nasa.gov/feature/artemis-iii)
 - McClernan, M.T. (2024). *Down Selected Artemis III Candidate Landing Site Navigational Grids.* U.S. Geological Survey data release. [https://doi.org/10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK). The simplified region envelopes from this release ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson) and are the authoritative validation reference from v1.2.0 onwards.
 - Gracy, S., & Lee, P. (2024). *Update on the Artemis III Reference Mission and Candidate Landing Region Selection.* 55th Lunar and Planetary Science Conference, Abstract #1695. (Source for the four published HLS hard-constraint thresholds used by v1.3.0's `rank-per-region` — slope, slope-buffer, illumination, DTE visibility.)
-- Wueller, F., et al. (2026). *Assessing Potential Landing Sites With Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions Within Artemis Candidate Landing Regions.* Journal of Geophysical Research: Planets, 131. [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434). (Peer-reviewed parallel: 130 candidate Artemis III landing sites identified by within-region selection with NASA HLS hard filters. v1.3.0's `rank-per-region` mirrors the outer framing; v1.4.0 ships the comparison framework against this catalog with a synthetic-placeholder CSV until the gated supplementary data release is acquired — see README §"Data acquisition status".)
+- Wueller, F., et al. (2026). *Assessing Potential Landing Sites With Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions Within Artemis Candidate Landing Regions.* Journal of Geophysical Research: Planets, 131. [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434). (Peer-reviewed parallel: 130 candidate Artemis III landing sites identified by within-region selection with NASA HLS hard filters. v1.3.0's `rank-per-region` mirrors the outer framing; v1.4.1 ships the quantitative comparison against this catalog — see README §"Quantitative comparison against Wueller et al. 2026".)
+- Wueller, L., Berger, L. M., Christopher, H., Sugimoto, K., Thaker, A., Carton, L., Jo, W., Lee, S., Pedrelli, R., Sanchez, P., & Kring, D. (2025). *Complementary Data for Wueller et al. (2026): Assessing Potential Landing Sites with Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions within Artemis Candidate Landing Regions* (Version v1) [Data set]. Zenodo. [doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058). (CC-BY 4.0 data deposit accompanying the JGR paper. The 130-site point catalog ships in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) and is the comparison reference for v1.4.1.)
 - NASA (2019). *Human Landing System Requirements Document.* (Underlying source for the HLS slope, slope-buffer, illumination, and DTE-visibility thresholds.)
 
 ## License

@@ -289,15 +289,17 @@ def compare_wueller(
         help="selene per-region sites GeoJSON. Defaults to data/outputs/per_region/sites.geojson.",
         dir_okay=False,
     ),
-    wueller_csv: Path | None = typer.Option(
+    wueller_source: Path | None = typer.Option(
         None,
-        "--wueller-csv",
+        "--wueller-source",
+        "--wueller-csv",  # backward-compat alias for v1.4.0 callers
         help=(
-            "Wueller 2026 site CSV. Defaults to the bundled "
-            "src/selene_base/validation/data/wueller_2026_sites.csv. The "
-            "shipped file is a synthetic 5-row placeholder until the "
-            "real data release is acquired; the CLI auto-detects this "
-            "and labels the output as not a real scientific result."
+            "Wueller 2026 site source. Defaults to the bundled real "
+            "shapefile at src/selene_base/validation/data/wueller_2026/"
+            "LandingSites.shp (130 sites, doi:10.5281/zenodo.17084058, "
+            "CC-BY 4.0). Pass a .shp or .csv path to override; "
+            "CSV mode is retained for backward compatibility with the "
+            "v1.4.0 synthetic placeholder."
         ),
         dir_okay=False,
     ),
@@ -307,19 +309,31 @@ def compare_wueller(
         help="Directory under which wueller_comparison.{json,csv} are written.",
         file_okay=False,
     ),
+    filter_to_usgs_scope: bool = typer.Option(
+        True,
+        "--filter-to-usgs-scope/--no-filter-to-usgs-scope",
+        help=(
+            "When on (default), drop the ~57 Wueller sites whose region "
+            "is not in NASA's October 2024 down-selected nine. selene-base "
+            "only ranks within USGS-scope regions, so this is the apples-"
+            "to-apples comparison. Pass --no-filter-to-usgs-scope to "
+            "compare against all 130 Wueller sites."
+        ),
+    ),
 ) -> None:
     """Compare selene-base per-region sites against Wueller et al. 2026.
 
-    The comparison **framework** is the v1.4.0 deliverable; the
-    quantitative agreement number is gated on acquiring the gated
-    Wueller 2026 data release. See README §"Data acquisition status"
-    for the search trail and path forward.
+    Quantitative comparison against the 130-site Wueller 2026 catalog
+    (doi:10.5281/zenodo.17084058, CC-BY 4.0). Default mode restricts
+    to NASA's October 2024 down-selected nine regions; pass
+    ``--no-filter-to-usgs-scope`` to compare the full 130-site catalog.
     """
     _compare_wueller.run(
         selene_sites_path=sites,
-        wueller_csv=wueller_csv,
+        wueller_source=wueller_source,
         outputs_dir=outputs_dir,
         match_threshold_km=match_threshold_km,
+        filter_to_usgs_scope=filter_to_usgs_scope,
     )
 
 

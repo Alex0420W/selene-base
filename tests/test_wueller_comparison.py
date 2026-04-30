@@ -1,21 +1,14 @@
-"""Tests for :mod:`selene_base.validation.wueller_comparison` (week 12 / v1.4.0).
+"""Tests for :mod:`selene_base.validation.wueller_comparison` (v1.4.1).
 
-The Wueller 2026 supplementary data is currently gated behind AGU /
-Wiley and no open data release has been located. The bundled
-``wueller_2026_sites.csv`` is a 5-row synthetic placeholder. These
-tests exercise the comparison logic on synthetic inputs the test owns
-in-memory; tests that would *only* be meaningful against the real
-Wueller catalog are explicitly skipped with
-``reason="awaiting upstream data"``.
+Starting in v1.4.1 the Wueller 2026 catalog ships in-repo as a real
+130-site shapefile bundle from the authors' Zenodo deposit
+(doi:10.5281/zenodo.17084058, CC-BY 4.0). Two formerly-skipped tests
+(``test_real_wueller_comparison_against_v13_per_region_sites`` and
+``test_per_region_wueller_counts_match_published_artemis_breakdown``)
+are now active and exercise the real bundle.
 
-Synthetic inputs cover:
-
-- the empty-input edge cases (zero selene sites or zero Wueller sites),
-- perfect-agreement (identical site sets at identical coordinates),
-- a no-agreement pair (sites in completely different hemispheres),
-- the match-threshold boundary (one pair just inside, one just outside),
-- distance computation against a known km offset,
-- the synthetic-placeholder detection on the bundled CSV.
+The synthetic-input tests below remain — they verify the comparison
+logic on inputs the test owns in-memory.
 """
 
 from __future__ import annotations
@@ -31,6 +24,8 @@ from shapely.geometry import Point
 from selene_base.data.load import LUNAR_GEOGRAPHIC_CRS
 from selene_base.validation.wueller_comparison import (
     SYNTHETIC_PLACEHOLDER_PREFIX,
+    WUELLER_CODE_TO_NAME,
+    WUELLER_TO_USGS_REGION_MAP,
     compare_sites,
     is_synthetic_placeholder,
     load_wueller_sites,
@@ -51,10 +46,12 @@ def _selene_gdf(rows: list[dict]) -> gpd.GeoDataFrame:
 def _wueller_gdf(rows: list[dict]) -> gpd.GeoDataFrame:
     if not rows:
         return gpd.GeoDataFrame(
-            columns=["wueller_site_id", "region", "lat", "lon"],
+            columns=["wueller_site_id", "region", "lat", "lon", "in_usgs_scope"],
             geometry=[],
             crs=LUNAR_GEOGRAPHIC_CRS,
         )
+    for r in rows:
+        r.setdefault("in_usgs_scope", True)
     geoms = [Point(r["lon"], r["lat"]) for r in rows]
     return gpd.GeoDataFrame(rows, geometry=geoms, crs=LUNAR_GEOGRAPHIC_CRS)
 
@@ -62,28 +59,41 @@ def _wueller_gdf(rows: list[dict]) -> gpd.GeoDataFrame:
 # ----------------------- load_wueller_sites + placeholder -------------------
 
 
-def test_bundled_csv_loads_with_expected_schema() -> None:
+def test_bundled_shapefile_loads_with_expected_schema() -> None:
     gdf = load_wueller_sites()
-    assert {"wueller_site_id", "region", "lat", "lon"}.issubset(gdf.columns)
+    assert {
+        "wueller_site_id",
+        "region",
+        "wueller_region",
+        "lat",
+        "lon",
+        "in_usgs_scope",
+    }.issubset(gdf.columns)
     assert (gdf["lat"] < -80).all(), "Wueller sites should sit near the south pole"
 
 
-def test_bundled_csv_is_synthetic_placeholder() -> None:
+def test_bundled_shapefile_is_not_synthetic_placeholder() -> None:
+    """v1.4.1: real shapefile load is no longer flagged as a placeholder."""
     gdf = load_wueller_sites()
-    assert is_synthetic_placeholder(gdf)
-    assert all(sid.startswith(SYNTHETIC_PLACEHOLDER_PREFIX) for sid in gdf["wueller_site_id"])
+    assert not is_synthetic_placeholder(gdf)
+    # Real Wueller site IDs are short codes like MMO01, NR101 — none
+    # should carry the legacy synthetic prefix.
+    assert not any(
+        str(sid).startswith(SYNTHETIC_PLACEHOLDER_PREFIX) for sid in gdf["wueller_site_id"]
+    )
 
 
-def test_load_missing_csv_raises() -> None:
+def test_load_missing_source_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        load_wueller_sites(Path("/nonexistent/wueller.csv"))
+        load_wueller_sites(tmp_path / "nonexistent.shp")
 
 
 def test_load_missing_columns_raises(tmp_path: Path) -> None:
     bad = tmp_path / "bad.csv"
     bad.write_text("foo,bar\n1,2\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="missing required columns"):
-        load_wueller_sites(bad)
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(ValueError, match="missing required columns"):
+            load_wueller_sites(bad)
 
 
 def test_load_reprojects_to_target_crs() -> None:
@@ -95,6 +105,17 @@ def test_load_reprojects_to_target_crs() -> None:
     assert "stere" in str(gdf.crs.to_proj4())
 
 
+def test_legacy_csv_load_emits_deprecation_warning() -> None:
+    """The legacy synthetic CSV path remains for backward compat but warns."""
+    from selene_base.validation.wueller_comparison import WUELLER_SITES_CSV
+
+    if not WUELLER_SITES_CSV.exists():
+        pytest.skip("Legacy CSV not present in this checkout")
+    with pytest.warns(DeprecationWarning):
+        gdf = load_wueller_sites(WUELLER_SITES_CSV)
+    assert is_synthetic_placeholder(gdf)
+
+
 # ----------------------- compare_sites: synthetic-only ----------------------
 
 
@@ -103,7 +124,7 @@ class TestEmptyInputs:
         wueller = _wueller_gdf(
             [{"wueller_site_id": "synthetic-placeholder-1", "region": "R", "lat": -85, "lon": 0}]
         )
-        result = compare_sites(_selene_gdf([]), wueller)
+        result = compare_sites(_selene_gdf([]), wueller, filter_to_usgs_scope=False)
         assert result["n_selene_sites"] == 0
         assert result["n_wueller_sites"] == 1
         assert result["n_selene_matched"] == 0
@@ -112,7 +133,7 @@ class TestEmptyInputs:
 
     def test_empty_wueller(self) -> None:
         selene = _selene_gdf([{"site_id": 1, "region_name": "R", "lat": -85, "lon": 0}])
-        result = compare_sites(selene, _wueller_gdf([]))
+        result = compare_sites(selene, _wueller_gdf([]), filter_to_usgs_scope=False)
         assert result["n_selene_sites"] == 1
         assert result["n_wueller_sites"] == 0
         assert result["n_selene_matched"] == 0
@@ -234,14 +255,44 @@ class TestPerRegionAggregation:
             assert entry["n_matched"] == 0
 
 
+class TestScopeFilter:
+    def test_filter_drops_out_of_scope(self) -> None:
+        # Two Wueller sites: one in-scope (Haworth), one out (Amundsen Rim).
+        # With filter on, only the Haworth one is compared; n_wueller_sites
+        # reflects the post-filter count and n_wueller_total carries the original.
+        selene = _selene_gdf([{"site_id": 1, "region_name": "Haworth", "lat": -86.5, "lon": -25.0}])
+        wueller = _wueller_gdf(
+            [
+                {
+                    "wueller_site_id": "W_in",
+                    "region": "Haworth",
+                    "lat": -86.5,
+                    "lon": -25.0,
+                    "in_usgs_scope": True,
+                },
+                {
+                    "wueller_site_id": "W_out",
+                    "region": "Amundsen Rim",
+                    "lat": -84.0,
+                    "lon": 70.0,
+                    "in_usgs_scope": False,
+                },
+            ]
+        )
+        result_filtered = compare_sites(selene, wueller, filter_to_usgs_scope=True)
+        assert result_filtered["n_wueller_total"] == 2
+        assert result_filtered["n_wueller_in_scope"] == 1
+        assert result_filtered["n_wueller_out_of_scope"] == 1
+        assert result_filtered["n_wueller_sites"] == 1
+        assert result_filtered["scope_filter_applied"] is True
+        assert result_filtered["out_of_scope_regions"] == ["Amundsen Rim"]
+
+        result_unfiltered = compare_sites(selene, wueller, filter_to_usgs_scope=False)
+        assert result_unfiltered["n_wueller_sites"] == 2
+        assert result_unfiltered["scope_filter_applied"] is False
+
+
 # ------------- placeholder-flag plumbing -------------
-
-
-def test_synthetic_placeholder_flag_set_on_bundled_csv() -> None:
-    selene = _selene_gdf([{"site_id": 1, "region_name": "R", "lat": -85.0, "lon": 0.0}])
-    wueller = load_wueller_sites()
-    result = compare_sites(selene, wueller)
-    assert result["using_synthetic_placeholder"] is True
 
 
 def test_synthetic_placeholder_flag_clear_for_non_placeholder_ids() -> None:
@@ -251,61 +302,106 @@ def test_synthetic_placeholder_flag_clear_for_non_placeholder_ids() -> None:
     assert result["using_synthetic_placeholder"] is False
 
 
-# ---- gated-on-real-data tests: skipped until upstream data is available ----
+def test_synthetic_placeholder_flag_set_when_legacy_csv_loaded() -> None:
+    """The legacy synthetic CSV still gets flagged when explicitly loaded."""
+    from selene_base.validation.wueller_comparison import WUELLER_SITES_CSV
+
+    if not WUELLER_SITES_CSV.exists():
+        pytest.skip("Legacy CSV not present in this checkout")
+    selene = _selene_gdf([{"site_id": 1, "region_name": "R", "lat": -85.0, "lon": 0.0}])
+    with pytest.warns(DeprecationWarning):
+        wueller = load_wueller_sites(WUELLER_SITES_CSV)
+    result = compare_sites(selene, wueller, filter_to_usgs_scope=False)
+    assert result["using_synthetic_placeholder"] is True
 
 
-@pytest.mark.skip(reason="awaiting upstream data: real Wueller 2026 catalog not yet acquired")
+# ---- real-data integration tests (v1.4.1 — bundle now ships) ----
+
+
 def test_real_wueller_comparison_against_v13_per_region_sites() -> None:
-    """Placeholder for the real Wueller 2026 quantitative comparison.
+    """Real Wueller 2026 catalog vs selene per-region sites.
 
-    Once the AGU/Wiley supplementary Table A1 (or any open data release)
-    is acquired and the bundled CSV is replaced with real coordinates,
-    this test should:
+    Loads selene per-region sites from the canonical
+    ``data/outputs/per_region/sites.geojson`` artefact (skips the test
+    if the artefact is not present, since it's gitignored). Asserts:
 
-    - Load selene v1.3 per-region sites from data/outputs/per_region/sites.geojson
-    - Load real Wueller sites via load_wueller_sites
-    - Call compare_sites at threshold=5 km
-    - Assert: n_selene_sites > 0, n_wueller_sites == 130, and the
-      result is *not* flagged as a synthetic placeholder.
+    - n_wueller_total == 130 (Wueller's headline count)
+    - n_wueller_in_scope is bracketed at 60-80 (actual: 73)
+    - n_selene_matched <= n_selene_sites
+    - no NaN values in per-site distances
+    - using_synthetic_placeholder is False
     """
+    sites_path = Path("data/outputs/per_region/sites.geojson")
+    if not sites_path.exists():
+        pytest.skip(
+            f"selene per-region sites not found at {sites_path}; "
+            "run `selene rank-per-region` to generate them."
+        )
+    selene_sites = gpd.read_file(sites_path)
+    wueller_sites = load_wueller_sites()
+    result = compare_sites(
+        selene_sites, wueller_sites, match_threshold_km=5.0, filter_to_usgs_scope=True
+    )
+
+    assert result["n_wueller_total"] == 130
+    assert 60 <= result["n_wueller_in_scope"] <= 80, (
+        f"in-scope count {result['n_wueller_in_scope']} outside expected range"
+    )
+    assert result["n_selene_matched"] <= result["n_selene_sites"]
+    assert 0 <= result["n_selene_matched"] <= 23
+
+    # No NaN distances on the per-site tables.
+    for entry in result["per_selene_site"]:
+        assert not np.isnan(entry["distance_km"])
+    for entry in result["per_wueller_site"]:
+        assert not np.isnan(entry["distance_km"])
+
+    assert result["using_synthetic_placeholder"] is False
 
 
-@pytest.mark.skip(
-    reason="awaiting upstream data: per-region n_wueller counts depend on real catalog"
-)
 def test_per_region_wueller_counts_match_published_artemis_breakdown() -> None:
-    """Once real data is in, verify the per-region site distribution matches
-    the breakdown reported in the Wueller 2026 paper (e.g. how many of the
-    130 sites fall in each Artemis CLR). This is a data-integrity smoke
-    test that catches CSV-load errors after a future data refresh."""
+    """Per-region site counts as bundled in the v1.4.1 shapefile.
+
+    Encodes the per-region in-scope counts from the Zenodo deposit so
+    that schema drift in a future re-bundle is caught.
+    """
+    wueller_sites = load_wueller_sites()
+    in_scope = wueller_sites[wueller_sites["in_usgs_scope"]]
+    counts = in_scope.groupby("region")["wueller_site_id"].count().to_dict()
+    expected = {
+        "Haworth": 11,
+        "Mons Mouton": 10,
+        "Mons Mouton Plateau": 11,
+        "Nobile Rim 1": 9,
+        "Nobile Rim 2": 9,
+        "Peak Near Cabeus B": 5,
+        "Slater Plain": 11,
+        "de Gerlache Rim 2": 7,
+    }
+    assert counts == expected, f"per-region in-scope counts drifted: got {counts}"
+    assert sum(expected.values()) == 73
 
 
-# Sanity: keep an empty "real data" parquet shape as a sentinel so that
-# the test discovery picks up the skipped placeholders even on fresh
-# clones.
-def test_skipped_real_data_tests_exist() -> None:
-    from inspect import getmembers, isfunction
-
-    import tests.test_wueller_comparison as module
-
-    skipped = [
-        name
-        for name, fn in getmembers(module, isfunction)
-        if getattr(fn, "pytestmark", [])
-        and any(getattr(m, "name", "") == "skip" for m in fn.pytestmark)
-    ]
-    assert "test_real_wueller_comparison_against_v13_per_region_sites" in skipped
-    assert "test_per_region_wueller_counts_match_published_artemis_breakdown" in skipped
+def test_region_code_mapping_round_trip() -> None:
+    """Every shapefile region code maps to a Wueller name, which in turn
+    is in WUELLER_TO_USGS_REGION_MAP."""
+    wueller_sites = load_wueller_sites()
+    codes = set(wueller_sites["wueller_region"].unique())
+    for code in codes:
+        assert code in WUELLER_CODE_TO_NAME, f"code {code!r} missing from WUELLER_CODE_TO_NAME"
+        full = WUELLER_CODE_TO_NAME[code]
+        assert full in WUELLER_TO_USGS_REGION_MAP, (
+            f"name {full!r} missing from WUELLER_TO_USGS_REGION_MAP"
+        )
 
 
-def test_render_summary_flags_placeholder_run() -> None:
+def test_render_summary_does_not_flag_real_data() -> None:
     from selene_base.validation.wueller_comparison import render_summary
 
-    selene = _selene_gdf([{"site_id": 1, "region_name": "R", "lat": -85, "lon": 0}])
+    selene = _selene_gdf([{"site_id": 1, "region_name": "Haworth", "lat": -86.5, "lon": -25.0}])
     wueller = load_wueller_sites()
     text = render_summary(compare_sites(selene, wueller))
-    assert "SYNTHETIC PLACEHOLDER ACTIVE" in text
-    assert "awaiting Wueller 2026 data release" in text
+    assert "SYNTHETIC PLACEHOLDER ACTIVE" not in text
 
 
 def _smoke_use_pandas() -> None:

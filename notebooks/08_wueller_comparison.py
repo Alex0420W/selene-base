@@ -1,20 +1,19 @@
 # %% [markdown]
-# # Week 12 — quantitative comparison vs Wueller et al. 2026 (v1.4.0 framework)
+# # Quantitative comparison vs Wueller et al. 2026 (v1.4.1)
 #
 # Wueller, F., et al. (2026), JGR Planets, doi:10.1029/2025JE009434,
 # published 130 candidate Artemis III landing sites identified by the
 # same outer methodology selene-base implements (NASA HLS hard filters
-# followed by within-region selection). v1.4.0 ships the comparison
-# **framework**; the real Wueller catalog is currently gated behind
-# AGU/Wiley and no open data release has been located, so the bundled
-# `wueller_2026_sites.csv` is a synthetic 5-row placeholder.
+# followed by within-region selection). v1.4.1 runs the comparison
+# against the real 130-site shapefile from the authors' Zenodo deposit
+# (doi:10.5281/zenodo.17084058, CC-BY 4.0), bundled in-repo at
+# `src/selene_base/validation/data/wueller_2026/LandingSites.shp`.
 #
-# This notebook produces the v1.4 visualisation set against whichever
-# CSV is at `src/selene_base/validation/data/wueller_2026_sites.csv` —
-# placeholder or real. The placeholder run renders cleanly and is
-# explicitly labelled "SYNTHETIC PLACEHOLDER" on every plot; once the
-# real CSV ships, rerunning this notebook regenerates the figures with
-# real numbers without code changes.
+# This notebook produces the visualisation set against the bundled
+# shapefile. If the legacy synthetic CSV is loaded instead (v1.4.0
+# fallback), each plot is labelled "SYNTHETIC PLACEHOLDER" via the
+# `using_synthetic_placeholder` flag so the limitation cannot be
+# misread.
 #
 # Run after:
 #
@@ -43,7 +42,6 @@ from selene_base.validation.nasa_regions import regions_polygons_to_geodataframe
 from selene_base.validation.wueller_comparison import (
     DEFAULT_MATCH_THRESHOLD_KM,
     compare_sites,
-    is_synthetic_placeholder,
     load_wueller_sites,
 )
 
@@ -58,12 +56,19 @@ SCORE_COG = Path("data/outputs/score_southpole.tif")
 
 # %%
 selene_sites = gpd.read_file(SELENE_SITES_GEOJSON).to_crs(POLAR_PROJ)
-wueller_sites = load_wueller_sites(target_crs=POLAR_PROJ)
+wueller_all = load_wueller_sites(target_crs=POLAR_PROJ)
+# Match the CLI default: compare against the in-scope subset only, and
+# plot the same subset so the headline numbers and the figure agree.
+if "in_usgs_scope" in wueller_all.columns:
+    wueller_sites = wueller_all[wueller_all["in_usgs_scope"]].reset_index(drop=True)
+else:
+    wueller_sites = wueller_all
 polygons = regions_polygons_to_geodataframe(target_crs=POLAR_PROJ)
 result = compare_sites(
     selene_sites.to_crs("+proj=longlat +R=1737400 +no_defs +type=crs"),
     wueller_sites.to_crs("+proj=longlat +R=1737400 +no_defs +type=crs"),
     match_threshold_km=DEFAULT_MATCH_THRESHOLD_KM,
+    filter_to_usgs_scope=False,  # already pre-filtered above
 )
 USING_PLACEHOLDER = result["using_synthetic_placeholder"]
 print(
