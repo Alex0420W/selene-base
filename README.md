@@ -47,7 +47,7 @@ The combined picture: the criteria are tuned, the validation primitive is author
 
 The table below tracks the *global*-ranking inside-polygon count. v1.3.0 (week 11) reframes the analysis to per-region ranking; the global-ranking inside-polygon count remains 0/20 by construction of the global framing, but is no longer the project's headline.
 
-| Validation metric | 3-criteria | 5-criteria (+ PRP) | 6-criteria (+ coupling) | 6-crit + thermal/polygon | 7-criteria (+ LOS) | **7-criteria + USGS polygons** |
+| Validation metric | v0.5 baseline | v0.6 (+PRP) | v0.7 (+coupling) | v1.0 (+poly) | v1.1 (+LOS) | **v1.2 (USGS)** |
 | --- | --- | --- | --- | --- | --- | --- |
 | top sites within 25 km of any centroid | 0 / 20 | 0 / 20 | 0 / 20 | 0 / 20 | 0 / 20 | **0 / 20** |
 | top sites inside any 15 km disk | n/a | n/a | n/a | 0 / 20 | 0 / 20 | 0 / 20 |
