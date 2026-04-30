@@ -15,7 +15,7 @@ The project's central output is **a per-region HLS-compliant landing site catalo
 
 > **23 sites across 8 / 9 USGS Artemis III regions, all guaranteed inside their published polygon and satisfying NASA's published HLS hard-constraint filters by construction.** The sole region with zero compliant cells is **Malapert Massif** — a real terrain-driven finding (no cell inside the Malapert polygon simultaneously satisfies slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 % at 240 m public-data resolution). The best-scoring region is **Mons Mouton Plateau** at score 0.746 with the largest HLS-eligible area fraction (15.07 %); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.10 % of polygon cells pass the HLS filters and only 2 sites fit at the 2 km NMS separation. Globally, **9.44 %** of the 240 m polar grid is HLS-eligible.
 
-[![selene-base v1.4.1: 23 candidate sites, 78% match within 5 km of Wueller 2026, median 1.71 km](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)](docs/img/headline_v141.png)
+[![selene-base v1.4.1: 23 candidate sites, 78% within 5 km of Wueller 2026 (median 1.71 km), overlaid on LROC WAC mosaic with aggregate suitability score](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
 
 This headline is a **reframing**, not a refinement. The previous versions (v1.0.0–v1.2.0) measured a different question — global ranking of habitat suitability followed by validation against NASA polygons — and reported 0/20 because globally-selected top sites pick the polar rim band where the coupling criterion is non-zero rather than the *interior* of NASA-published regions. The Wueller et al. 2026 (JGR Planets, [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)) parallel — which found 130 candidate sites with similar within-region HLS-filtered methodology — confirms that **per-region HLS-filtered ranking is the right framing for a NASA-aligned site catalog**.
 
@@ -255,7 +255,7 @@ A few choices in the pipeline are worth surfacing because they materially affect
 
 `selene rank-per-region` followed by `selene validate-per-region` produces the NASA-aligned per-polygon catalog: for each USGS polygon, the cells passing every HLS hard filter are ranked by aggregate suitability score, and up to ``n_per_region`` sites (default 3) are NMS-extracted at 2 km separation.
 
-![Per-region HLS-compliant ranking: 23 sites across 8/9 USGS regions](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)
+[![Per-region HLS-compliant ranking: 23 sites across 8/9 USGS regions, color-coded by region](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)
 
 ![Per-region HLS-eligibility maps for all nine USGS polygons](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_eligibility.png)
 
@@ -413,7 +413,7 @@ Run `selene compare-wueller --no-filter-to-usgs-scope` to compare against all 13
 
 Distances are computed in lunar south-polar stereographic metres (`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`), conformal at the pole and sub-percent error vs great-circle for sub-100 km offsets.
 
-![selene-base v1.3 sites (yellow) vs Wueller 2026 sites (blue)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
+[![selene-base sites (cyan) vs Wueller 2026 sites (yellow) with matched-pair connector lines, on USGS Artemis III polygon outlines](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)
 
 ### Data provenance
 
