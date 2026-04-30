@@ -121,7 +121,7 @@ def run(
     processed_dir: Path = DEFAULT_PROCESSED_DIR,
     outputs_dir: Path = DEFAULT_OUTPUTS_DIR,
     per_region_subdir: str = DEFAULT_PER_REGION_SUBDIR,
-    n_per_region: int = 3,
+    n_per_region: int = 10,
     min_distance_km: float = 2.0,
     hls_slope_max_deg: float = HLS_SLOPE_MAX_DEG,
     hls_buffer_m: float = HLS_BUFFER_M,

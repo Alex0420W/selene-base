@@ -348,7 +348,7 @@ def test_real_wueller_comparison_against_v13_per_region_sites() -> None:
         f"in-scope count {result['n_wueller_in_scope']} outside expected range"
     )
     assert result["n_selene_matched"] <= result["n_selene_sites"]
-    assert 0 <= result["n_selene_matched"] <= 23
+    assert 0 <= result["n_selene_matched"] <= 70
 
     # No NaN distances on the per-site tables.
     for entry in result["per_selene_site"]:

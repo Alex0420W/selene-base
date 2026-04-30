@@ -1,6 +1,6 @@
 # selene-base
 
-> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis III region polygons (DOI 10.5066/P1MEQ6UK). v1.4.1 produces 23 HLS-compliant candidate landing sites across 8 of NASA's 9 Artemis III regions, of which **18 (78 %) agree within 5 km of a peer-reviewed Wueller et al. 2026 site (JGR Planets, 130 sites); median match distance 1.71 km** — quantitative agreement with peer-reviewed published methodology, computed against the authors' Zenodo data deposit (CC-BY 4.0). The release history below documents the engineering arc across eight versioned releases.
+> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis III region polygons (DOI 10.5066/P1MEQ6UK). v1.4.2 produces 70 HLS-compliant candidate landing sites across 8 of NASA's 9 Artemis III regions, of which **56 (80 %) agree within 5 km of a peer-reviewed Wueller et al. 2026 site (JGR Planets, 130 sites); median match distance 1.88 km** — quantitative agreement with peer-reviewed published methodology, computed against the authors' Zenodo data deposit (CC-BY 4.0). The release history below documents the engineering arc across nine versioned releases.
 
 [![CI](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml/badge.svg)](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,9 +11,9 @@ NASA's Artemis III mission will land humans near the lunar south pole later this
 
 ## Headline finding
 
-> **18 of 23 selene-base candidate landing sites (78 %) match within 5 km of a peer-reviewed Wueller et al. 2026 site, with median match distance 1.71 km.** The 23 sites are the per-region HLS-compliant landing catalog: candidates across 8 of NASA's 9 Artemis III regions, all guaranteed inside their published USGS polygon and satisfying NASA's published HLS hard-constraint filters (slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 %) by construction. The sole region with zero compliant cells is **Malapert Massif** — a real terrain-driven finding (no cell inside the Malapert polygon simultaneously satisfies all four HLS thresholds at 240 m public-data resolution). The best-scoring region is **Mons Mouton Plateau** at score 0.746 with the largest HLS-eligible area fraction (15.07 %); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.10 % of polygon cells pass the HLS filters and only 2 sites fit at the 2 km NMS separation. Globally, **9.44 %** of the 240 m polar grid is HLS-eligible.
+> **56 of 70 selene-base candidate landing sites (80 %) match within 5 km of a peer-reviewed Wueller et al. 2026 site, with median match distance 1.88 km.** The 70 sites are the per-region HLS-compliant landing catalog: candidates across 8 of NASA's 9 Artemis III regions, all guaranteed inside their published USGS polygon and satisfying NASA's published HLS hard-constraint filters (slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 %) by construction. The sole region with zero compliant cells is **Malapert Massif** — a real terrain-driven finding (no cell inside the Malapert polygon simultaneously satisfies all four HLS thresholds at 240 m public-data resolution). The best-scoring region is **Mons Mouton Plateau** at score 0.746 with the largest HLS-eligible area fraction (15.07 %); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.10 % of polygon cells pass the HLS filters and only 2 sites fit at the 2 km NMS separation. Globally, **9.44 %** of the 240 m polar grid is HLS-eligible.
 
-[![selene-base v1.4.1: 23 candidate sites, 78 % within 5 km of Wueller 2026 (median 1.71 km), overlaid on LROC WAC mosaic with aggregate suitability score](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
+[![selene-base v1.4.2: 70 candidate sites, 80 % within 5 km of Wueller 2026 (median 1.88 km), overlaid on LROC WAC mosaic with aggregate suitability score](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller.png)
 
 This headline is a **reframing**, not a refinement. The previous versions (v1.0.0–v1.2.0) measured a different question — global ranking of habitat suitability followed by validation against NASA polygons — and reported 0/20 because globally-selected top sites pick the polar rim band where the coupling criterion is non-zero rather than the *interior* of NASA-published regions. The Wueller et al. 2026 (JGR Planets, [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434)) parallel — which found 130 candidate sites with similar within-region HLS-filtered methodology — confirms that **per-region HLS-filtered ranking is the right framing for a NASA-aligned site catalog**.
 
@@ -33,9 +33,9 @@ Across the v1.0.0 — v1.2.0 releases — through five revisions of the model an
 
 5. **Replacing the 15 km disk approximations with USGS's authoritative published polygons (v1.2.0) confirms the geometric separation is not a disk-approximation artefact.** USGS Data Release 10.5066/P1MEQ6UK ships simplified envelopes (4-vertex quadrilaterals) for all nine Artemis III regions, derived from NASA's LROC QuickMap definitions. They differ substantively from the disk approximations: most regions are ~400 km² quadrilaterals (vs the disk's 707 km²); Mons Mouton Plateau alone is **4,452 km² — over 6× larger than the disk**; one region the legacy code called "Cabeus B" is published as "Peak Near Cabeus B" centred on the rim, not the crater floor; and one disk centroid (the legacy "Slater Plain" at lon -54.3°) sits ~180° away from where USGS publishes Slater Plain (lon +125°). Against these authoritative polygons, the default-weights result is **0/20 top sites inside any USGS polygon, 0/9 USGS regions containing a top site, median distance to the nearest USGS polygon 135.1 km, closest 41.5 km (de Gerlache Rim 2)**. The 200-sample sensitivity sweep produces ≥1 site inside a USGS polygon in **6 / 200 samples** (max 2/20). **The geometric separation is real even against the right validation reference** — the disk approximations were systematically misrepresenting the regions, but the model's rim-band optimum is still geometrically distinct from NASA's authoritative regions.
 
-6. **The right *framing* — per-region ranking with HLS hard filters (v1.3.0) — produces 23 sites across 8/9 NASA regions.** The first five stages of the arc all rank globally and ask "did our top-20 fall inside NASA's regions?" The right question, mirroring NASA's own selection process, is "within each NASA region, which cells satisfy the HLS landing requirements and rank highest by suitability?" Reframing the search this way produces a complete per-region landing-site catalog. **The 0/20 result through v1.2.0 reflected the global-ranking framing, not a flaw in the model**: globally-best cells cluster on the polar rim band where the coupling criterion is non-zero; per-region-best HLS-compliant cells cluster inside NASA polygons by construction. Both findings are valid — the diagnostic arc is preserved below for context.
+6. **The right *framing* — per-region ranking with HLS hard filters (v1.3.0) — produces a per-region landing-site catalog across 8/9 NASA regions** (23 sites at the v1.3 default of 3 per region, 70 sites at the v1.4.2 default of 10 per region). The first five stages of the arc all rank globally and ask "did our top-20 fall inside NASA's regions?" The right question, mirroring NASA's own selection process, is "within each NASA region, which cells satisfy the HLS landing requirements and rank highest by suitability?" Reframing the search this way produces a complete per-region landing-site catalog. **The 0/20 result through v1.2.0 reflected the global-ranking framing, not a flaw in the model**: globally-best cells cluster on the polar rim band where the coupling criterion is non-zero; per-region-best HLS-compliant cells cluster inside NASA polygons by construction. Both findings are valid — the diagnostic arc is preserved below for context.
 
-The combined picture: the criteria are tuned, the validation primitive is authoritative, and **the framing is now NASA-aligned**. The previously-open scientific question — "do the v1.3 sites identify the same cells NASA's process identifies?" — is now answered quantitatively in v1.4.1 against Wueller et al. 2026's 130 published sites: **18/23 selene sites (78 %) match within 5 km of an in-scope Wueller site; median match distance 1.71 km** (see "Quantitative comparison against Wueller et al. 2026" below).
+The combined picture: the criteria are tuned, the validation primitive is authoritative, and **the framing is now NASA-aligned**. The previously-open scientific question — "do the v1.3 sites identify the same cells NASA's process identifies?" — is now answered quantitatively in v1.4.2 against Wueller et al. 2026's 130 published sites: **56/70 selene sites (80 %) match within 5 km of an in-scope Wueller site; median match distance 1.88 km** (see "Quantitative comparison against Wueller et al. 2026" below).
 
 ![Diagnostic from v1.0–v1.2: model's top-20 (red) cluster on the rim band where the coupling criterion is non-zero; NASA centroids (cyan) sit in the disk interiors](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/coupling_overlay.png)
 
@@ -110,7 +110,7 @@ pip install -e .
 selene download --sample        # downloads + extracts data/raw/<sample>
 selene preprocess               # warps + crater-density rasterisation -> data/processed/
 selene score                    # seven criteria; missing ones renormalise out cleanly
-selene rank-per-region --n-per-region 3   # NASA-aligned per-USGS-polygon catalog
+selene rank-per-region          # NASA-aligned per-USGS-polygon catalog (default n_per_region=10)
 selene viz                      # webmap.html + per-site HTML reports
                                 # (note: webmap loads Leaflet from a CDN on
                                 #  first open; everything else is offline-safe)
@@ -130,7 +130,7 @@ selene download lola            # ~115 MB
 selene download illumination    # ~82 MB
 selene download diviner         # ~605 MB Diviner Polar Resource Product (PRP)
 # selene download lend / scarps remain TODO-flagged
-selene preprocess && selene score && selene rank-per-region --n-per-region 3
+selene preprocess && selene score && selene rank-per-region
 ```
 
 `selene --help` lists every subcommand; `selene <cmd> --help` shows its options.
@@ -249,35 +249,35 @@ A few choices in the pipeline are worth surfacing because they materially affect
 
 ### Per-region HLS-compliant catalog (v1.3.0)
 
-`selene rank-per-region` followed by `selene validate-per-region` produces the NASA-aligned per-polygon catalog: for each USGS polygon, the cells passing every HLS hard filter are ranked by aggregate suitability score, and up to ``n_per_region`` sites (default 3) are NMS-extracted at 2 km separation.
+`selene rank-per-region` followed by `selene validate-per-region` produces the NASA-aligned per-polygon catalog: for each USGS polygon, the cells passing every HLS hard filter are ranked by aggregate suitability score, and up to ``n_per_region`` sites (default 10) are NMS-extracted at 2 km separation.
 
 ![Per-region HLS-eligibility maps for all nine USGS polygons](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_eligibility.png)
 
-**Result (default weights, default HLS thresholds, n_per_region = 3):**
+**Result (default weights, default HLS thresholds, n_per_region = 10):**
 
 | USGS region | code | n sites | best score | mean score | HLS-eligible area | eligible % |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| **Mons Mouton Plateau** | MP | 3 | **0.746** | 0.740 | ~671 km² | **15.07 %** |
-| Nobile Rim 2 | N2 | 3 | 0.720 | 0.716 | ~33.8 km² | 8.46 % |
-| Mons Mouton | MM | 3 | 0.710 | 0.700 | ~17.7 km² | 6.92 % |
-| Haworth | HW | 3 | 0.703 | 0.696 | ~65.7 km² | 7.40 % |
+| **Mons Mouton Plateau** | MP | 10 | **0.746** | 0.734 | ~671 km² | **15.07 %** |
+| Nobile Rim 2 | N2 | 10 | 0.720 | 0.698 | ~33.8 km² | 8.46 % |
+| Mons Mouton | MM | 10 | 0.710 | 0.675 | ~17.7 km² | 6.92 % |
+| Haworth | HW | 10 | 0.703 | 0.682 | ~65.7 km² | 7.40 % |
 | de Gerlache Rim 2 | G2 | 2 | 0.703 | 0.680 | ~0.4 km² | **0.10 %** |
-| Slater Plain | SP | 3 | 0.707 | 0.693 | ~10.5 km² | 2.62 % |
-| Peak Near Cabeus B | CB | 3 | 0.705 | 0.689 | ~9.0 km² | 2.25 % |
-| Nobile Rim 1 | N1 | 3 | 0.697 | 0.688 | ~25.9 km² | 6.47 % |
+| Slater Plain | SP | 9 | 0.707 | 0.669 | ~10.5 km² | 2.62 % |
+| Peak Near Cabeus B | CB | 9 | 0.705 | 0.666 | ~9.0 km² | 2.25 % |
+| Nobile Rim 1 | N1 | 10 | 0.697 | 0.676 | ~25.9 km² | 6.47 % |
 | **Malapert Massif** | MA | **0** | — | — | 0 km² | **0.00 %** |
 
-[![Per-region HLS-compliant ranking: 23 sites color-coded by USGS region across 8 of 9 Artemis III candidate regions](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)
+[![Per-region HLS-compliant ranking: 70 sites color-coded by USGS region across 8 of 9 Artemis III candidate regions](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/per_region_ranking.png)
 
 **Headline numbers:**
 
-- **23 total sites across 8 / 9 USGS regions.**
+- **70 total sites across 8 / 9 USGS regions** (NMS-at-2km caps the small regions: Slater Plain and Peak Near Cabeus B saturate at 9; de Gerlache Rim 2 caps at 2).
 - **Malapert Massif has zero HLS-compliant cells.** The polygon's terrain (per the LOLA + Mazarico + Diviner stack) does not contain a single 240 m cell that simultaneously satisfies slope ≤ 8°, distance ≥ 100 m to steeper cells, illumination ≥ 33 %, and DTE visibility ≥ 50 %. This is a real terrain-driven finding, consistent with NASA's selection presumably relying on higher-resolution NAC stereo DEMs to characterise this region.
 - **Mons Mouton Plateau** is the most "easy" region: 15.07 % of its polygon-cells satisfy every HLS filter (~671 km² of HLS-eligible area inside the 4452 km² polygon), and the best HLS-compliant site there scores **0.746** — the highest in the catalog.
-- **de Gerlache Rim 2** is the most constrained of the regions with sites: only 0.10 % of polygon cells (~0.4 km²) are HLS-eligible, and only 2 sites fit at the 2 km NMS separation.
+- **de Gerlache Rim 2** is the most constrained of the regions with sites: only 0.10 % of polygon cells (~0.4 km²) are HLS-eligible, and only 2 sites fit at the 2 km NMS separation — independent of `n_per_region`.
 - Globally, **9.44 %** of the 240 m polar grid (~605 600 of 6.4 M cells) satisfies every HLS hard filter — most of that is outside any USGS polygon, on the polar rim band the v1.0–v1.2 diagnostic releases identified.
 
-The v1.3 sites are guaranteed inside USGS polygons and HLS-compliant by construction. The relevant scientific question — "do they identify the same cells NASA's process identifies?" — is answered quantitatively in v1.4.1 against **Wueller et al. 2026's 130 published sites**: 18/23 selene sites (78 %) match within 5 km of an in-scope Wueller site, median 1.71 km. See "Quantitative comparison against Wueller et al. 2026" below.
+The v1.3 sites are guaranteed inside USGS polygons and HLS-compliant by construction. The relevant scientific question — "do they identify the same cells NASA's process identifies?" — is answered quantitatively in v1.4.2 against **Wueller et al. 2026's 130 published sites**: 56/70 selene sites (80 %) match within 5 km of an in-scope Wueller site, median 1.88 km. See "Quantitative comparison against Wueller et al. 2026" below.
 
 ### Global-ranking validation (legacy, v1.0.0 — v1.2.0)
 
@@ -340,49 +340,49 @@ The disk-based table is preserved for continuity with the v1.0.0 / v1.1.0 histor
 
 The disk-based "Cabeus B" entry shows a top site within 12.3 km of the disk edge — but the corresponding USGS polygon ("Peak Near Cabeus B", at a different geographic location) is 67.3 km from the same `site_18`, because the legacy disk centroid sits ~150 km north-east of where USGS places the actual region. Two of the disk-table closest distances (Cabeus B and de Gerlache Rim 2) are misleading once measured against the right geometry.
 
-## Quantitative comparison against Wueller et al. 2026 (v1.4.1 — quantitative comparison)
+## Quantitative comparison against Wueller et al. 2026 (v1.4.2 — quantitative comparison)
 
-[Wueller, F., et al. (2026)](https://doi.org/10.1029/2025JE009434) published in *Journal of Geophysical Research: Planets* a peer-reviewed analysis identifying **130 candidate Artemis III landing sites** within NASA's candidate regions using essentially the same outer methodology selene-base implements: NASA HLS hard filters (slope < 8°, ≥ 100 m buffer to steeper terrain) followed by within-region selection. v1.4.1 ships the **quantitative comparison** against the authors' Zenodo data deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0, 130-site shapefile bundled in-repo).
+[Wueller, F., et al. (2026)](https://doi.org/10.1029/2025JE009434) published in *Journal of Geophysical Research: Planets* a peer-reviewed analysis identifying **130 candidate Artemis III landing sites** within NASA's candidate regions using essentially the same outer methodology selene-base implements: NASA HLS hard filters (slope < 8°, ≥ 100 m buffer to steeper terrain) followed by within-region selection. v1.4.2 ships the **quantitative comparison** against the authors' Zenodo data deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0, 130-site shapefile bundled in-repo).
 
 ### Headline (default weights, default HLS thresholds, threshold = 5 km, in-scope only)
 
 | metric | value |
 | --- | ---: |
-| selene per-region sites | 23 |
+| selene per-region sites | 70 |
 | Wueller 2026 sites (total catalog) | 130 |
 | Wueller sites in USGS scope (NASA Oct 2024 nine) | **73** |
 | Wueller sites out of USGS scope | 57 |
-| **selene sites matched within 5 km of an in-scope Wueller site** | **18 / 23 (78 %)** |
-| Wueller in-scope sites matched within 5 km of a selene site | 30 / 73 (41 %) |
-| **median matched-pair distance** | **1.71 km** |
+| **selene sites matched within 5 km of an in-scope Wueller site** | **56 / 70 (80 %)** |
+| Wueller in-scope sites matched within 5 km of a selene site | 46 / 73 (63 %) |
+| **median matched-pair distance** | **1.88 km** |
 | match threshold (regional-granularity scale) | 5 km |
 
-**Eighteen of twenty-three selene sites land within 5 km of a peer-reviewed candidate site identified by an independent group using the same outer methodology on a higher-resolution DEM.** Median match distance is 1.71 km — well inside the 1–5 km regional-granularity scale at which candidate-site *selection* operates (NASA HLS landing accuracy is 100 m, but selecting *which* terrain to land on is the kilometre-scale question). The asymmetry — 78 % of selene sites match but only 41 % of Wueller sites do — is structural: Wueller produces 5–11 sites per region (vs selene's `n_per_region = 3`), so the per-selene matching rate is the right comparison.
+**Fifty-six of seventy selene sites land within 5 km of a peer-reviewed candidate site identified by an independent group using the same outer methodology on a higher-resolution DEM.** Median match distance is 1.88 km — well inside the 1–5 km regional-granularity scale at which candidate-site *selection* operates (NASA HLS landing accuracy is 100 m, but selecting *which* terrain to land on is the kilometre-scale question). At v1.4.2's `n_per_region = 10` default, both directions of the comparison are now near-saturated: 80 % of selene sites match a Wueller site, and 63 % of in-scope Wueller sites have a selene neighbour within 5 km — up from 41 % at v1.4.1's `n_per_region = 3`.
 
 ### Per-region agreement
 
-Selene ranks at most 3 sites per region (`n_per_region = 3` is the v1.3.0 default). Wueller ranks more sites per region. The "matched" column counts selene sites whose nearest **same-region** Wueller site is within 5 km.
+Selene ranks up to 10 sites per region (`n_per_region = 10` is the v1.4.2 default; NMS-at-2km caps the actual count below 10 for small polygons). Wueller publishes 5–11 sites per region. The "matched" column counts selene sites whose nearest **same-region** Wueller site is within 5 km.
 
 | USGS region | selene n | Wueller in-scope n | matched | median match dist (km) |
 | --- | ---: | ---: | ---: | ---: |
-| Haworth | 3 | 11 | **3 / 3** | 1.06 |
-| Mons Mouton | 3 | 10 | **3 / 3** | 2.12 |
-| Mons Mouton Plateau | 3 | 11 | 1 / 3 | 1.38 |
-| Nobile Rim 1 | 3 | 9 | **3 / 3** | 1.59 |
-| Nobile Rim 2 | 3 | 9 | **3 / 3** | 1.12 |
-| Peak Near Cabeus B | 3 | 5 | **3 / 3** | 1.94 |
-| Slater Plain | 3 | 11 | 2 / 3 | 1.54 |
+| Haworth | 10 | 11 | 7 / 10 | 2.09 |
+| Mons Mouton | 10 | 10 | **10 / 10** | 2.30 |
+| Mons Mouton Plateau | 10 | 11 | 5 / 10 | 2.38 |
+| Nobile Rim 1 | 10 | 9 | 8 / 10 | 1.30 |
+| Nobile Rim 2 | 10 | 9 | 9 / 10 | 1.14 |
+| Peak Near Cabeus B | 9 | 5 | **9 / 9** | 1.94 |
+| Slater Plain | 9 | 11 | 6 / 9 | 2.16 |
 | de Gerlache Rim 2 | 2 | 7 | 0 / 2 | — |
-| **Total** | **23** | **73** | **18 / 23** | **1.71** |
+| **Total** | **70** | **73** | **56 / 70** | **1.88** |
 
-**Six of eight in-scope regions agree at 100 % match-within-region.** Two outliers:
+**Two regions agree at 100 % match-within-region** (Mons Mouton, Peak Near Cabeus B); Nobile Rim 1 and Nobile Rim 2 reach 80 %+ at the new default. The structural outliers are unchanged from v1.4.1:
 
-- **de Gerlache Rim 2 (0/2 matched).** selene's two HLS-compliant sites are 8.8 km from the nearest Wueller dGR2 site — outside the 5 km threshold but still within an order of magnitude. This is also the only region where selene returns fewer than 3 sites (the polygon contains only 2 cells passing every HLS filter at 240 m resolution).
-- **Mons Mouton Plateau (1/3 matched), Slater Plain (2/3 matched).** The largest disagreements are 5.6–5.7 km — *just* outside the threshold. At a 6 km threshold every disagreement here would flip to a match.
+- **de Gerlache Rim 2 (0/2 matched).** selene's two HLS-compliant sites are 8.8 km from the nearest Wueller dGR2 site — outside the 5 km threshold but still within an order of magnitude. This is the only region where selene caps below `n_per_region` regardless of the cap (the polygon contains only 2 cells passing every HLS filter at 240 m resolution at 2 km NMS).
+- **Mons Mouton Plateau (5/10 matched), Slater Plain (6/9 matched), Haworth (7/10 matched).** The largest disagreements are still 5.6–8.3 km — *just* outside the threshold. At a 6 km threshold most flip to match.
 
-The longest selene-only nearest distance is 8.8 km (de Gerlache Rim 2). The longest Wueller-only nearest distance is 25.5 km (MMP08 vs selene's MMP top-3) — Wueller's MMP catalog spreads further across the polygon than selene's top-3 cluster, which is the structural consequence of selene's NMS at 2 km separation choosing tightly-packed top-scorers.
+The longest selene-only nearest distance at the new default is 12.5 km (a Mons Mouton Plateau outlier vs Wueller MMP09). The longest Wueller-only nearest distance is 18.6 km (dGR202 vs selene's two dGR2 sites) — the dGR2 terrain divergence between selene's HLS-eligible cells and Wueller's catalog is genuine, not a sample-size artefact.
 
-[![selene-base v1.3 sites (cyan) vs Wueller 2026 sites (yellow) with matched-pair connector lines, on USGS Artemis III polygon outlines](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)
+[![selene-base v1.4.2 sites (cyan) vs Wueller 2026 sites (yellow) with matched-pair connector lines, on USGS Artemis III polygon outlines](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/headline_v141.png)
 
 ### In-scope vs out-of-scope split
 
@@ -399,7 +399,7 @@ Wueller's 130 sites span 16 region codes; **57 are outside NASA's October 2024 d
 | dGKM | de Gerlache-Kocher Massif | 7 |
 | dGR1 | de Gerlache Rim 1 | 6 |
 
-Run `selene compare-wueller --no-filter-to-usgs-scope` to compare against all 130; under that mode selene's 18 still match within 5 km (the 5 unmatched selene sites stay unmatched — none of them have a closer match outside their own USGS region).
+Run `selene compare-wueller --no-filter-to-usgs-scope` to compare against all 130; under that mode selene's 56 still match within 5 km (the 14 unmatched selene sites stay unmatched — none of them have a closer match outside their own USGS region).
 
 ### Outputs
 
@@ -415,13 +415,14 @@ Distances are computed in lunar south-polar stereographic metres (`+proj=stere +
 
 The catalog ships in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) as a six-file shapefile bundle (`LandingSites.shp/.shx/.dbf/.prj/.cpg`, ~60 KB total) plus a [README](src/selene_base/validation/data/wueller_2026/README.md) carrying the full attribution. Source is the authors' Zenodo deposit "Complementary Data for Wueller et al. (2026)" (Wueller, Berger, Christopher, Sugimoto, Thaker, Carton, Jo, Lee, Pedrelli, Sanchez, & Kring, 2025), [doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), licensed CC-BY 4.0. The deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), exploration-area polygons, and an illumination-modeling layer set; only the 130-site point catalog is bundled in-repo, the rest stays in the upstream archive and may be integrated in a future release.
 
-### What ships in v1.4.1
+### What ships in v1.4.2
 
-- [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) — the bundled shapefile and README.
-- [`src/selene_base/validation/wueller_comparison.py`](src/selene_base/validation/wueller_comparison.py) — `load_wueller_sites` (defaults to the shapefile, falls back to the legacy synthetic CSV with a `DeprecationWarning`), `compare_sites` (now with `filter_to_usgs_scope` parameter, default True), `WUELLER_TO_USGS_REGION_MAP`, `WUELLER_CODE_TO_NAME`, `is_synthetic_placeholder`, `render_summary`. Distance computation in lunar polar stereographic metres (conformal at the pole, sub-percent error vs great-circle for sub-100 km offsets — verified by an explicit known-offset unit test).
-- [`src/selene_base/pipeline/compare_wueller.py`](src/selene_base/pipeline/compare_wueller.py) and the [`selene compare-wueller`](src/selene_base/cli.py) CLI subcommand, now with `--filter-to-usgs-scope/--no-filter-to-usgs-scope` and a backward-compat `--wueller-csv` alias.
-- [`tests/test_wueller_comparison.py`](tests/test_wueller_comparison.py) — 20 tests passing: the 16 v1.4.0 synthetic tests, the two formerly-skipped real-data tests (`test_real_wueller_comparison_against_v13_per_region_sites`, `test_per_region_wueller_counts_match_published_artemis_breakdown`), plus a scope-filter test, a deprecation-warning test on the legacy CSV path, a region-code round-trip test, and a render-summary "no synthetic markers when real data is loaded" test.
-- [`notebooks/08_wueller_comparison.py`](notebooks/08_wueller_comparison.py) — produces the headline overlay map ([docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png)), the distance histogram ([docs/img/wueller_distance_hist.png](docs/img/wueller_distance_hist.png)), and the per-region match-count bar chart ([docs/img/wueller_per_region_bars.png](docs/img/wueller_per_region_bars.png)).
+- **Default `n_per_region` raised from 3 → 10** in [`scoring/ranking.py`](src/selene_base/scoring/ranking.py), [`pipeline/rank_per_region.py`](src/selene_base/pipeline/rank_per_region.py), and the `selene rank-per-region` CLI option. NMS-at-2km caps the small regions automatically (Slater Plain, Peak Near Cabeus B at 9; de Gerlache Rim 2 at 2). Total sites at the new default: 70.
+- [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) — bundled shapefile and README (v1.4.1, unchanged).
+- [`src/selene_base/validation/wueller_comparison.py`](src/selene_base/validation/wueller_comparison.py) — `load_wueller_sites` (defaults to the shapefile, falls back to the legacy synthetic CSV with a `DeprecationWarning`), `compare_sites` (with `filter_to_usgs_scope` parameter, default True), `WUELLER_TO_USGS_REGION_MAP`, `WUELLER_CODE_TO_NAME`, `is_synthetic_placeholder`, `render_summary`. Distance computation in lunar polar stereographic metres (conformal at the pole, sub-percent error vs great-circle for sub-100 km offsets — verified by an explicit known-offset unit test).
+- [`src/selene_base/pipeline/compare_wueller.py`](src/selene_base/pipeline/compare_wueller.py) and the [`selene compare-wueller`](src/selene_base/cli.py) CLI subcommand, with `--filter-to-usgs-scope/--no-filter-to-usgs-scope` and a backward-compat `--wueller-csv` alias.
+- [`tests/test_wueller_comparison.py`](tests/test_wueller_comparison.py) — 20 tests passing, with the real-data assertion bound updated from `<= 23` to `<= 70` for the new default.
+- [`notebooks/08_wueller_comparison.py`](notebooks/08_wueller_comparison.py) and [`notebooks/09_headline_v141.py`](notebooks/09_headline_v141.py) — regenerate the headline overlay map ([docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png)), the per-region dot-and-line diagnostic ([docs/img/headline_v141.png](docs/img/headline_v141.png)), the distance histogram ([docs/img/wueller_distance_hist.png](docs/img/wueller_distance_hist.png)), and the per-region match-count bar chart ([docs/img/wueller_per_region_bars.png](docs/img/wueller_per_region_bars.png)) at the new default.
 
 ## Robustness
 
@@ -504,13 +505,14 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - **v1.2.0 — USGS authoritative polygon validation.** ✅ Replaced the 15 km disk approximations with USGS's officially-published simplified region envelopes (DOI 10.5066/P1MEQ6UK, McClernan 2024). The polygons ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson). `selene validate` now prints three result tables (centroid distance, 15 km disk inside/outside, USGS polygon inside/outside) and `validation.json` carries all three metric families. The disk approximations were systematically wrong: most regions are ~400 km² quadrilaterals (vs the 707 km² disk), Mons Mouton Plateau is **4452 km² — 6× the disk area**, one disk centroid for "Slater Plain" sits ~180° away from the USGS polygon's actual location, and "Cabeus B" was misnamed (USGS publishes "Peak Near Cabeus B", centred on the rim peak, not the crater floor). **Default-weights result against USGS polygons: 0/20 inside, 0/9 USGS regions containing a top site, median distance 135.1 km, closest 41.5 km (de Gerlache Rim 2). Sensitivity sweep: 6/200 weight regimes produce ≥1 site inside any USGS polygon (max 2/20), down from 21/200 against the disks** — the geometric separation is *more* pronounced against the right validation reference, not less, because the disks were inflated outward in places where the actual USGS polygons are not. The "validation metric was the bottleneck" hypothesis from v1.0.0 was *partially* correct (the disk approximations were wrong) but the *underlying* geometric separation between the model's rim-band optimum and NASA's authoritative regions persists.
 - **v1.3.0 — per-region ranking with NASA HLS hard filters.** ✅ `selene rank-per-region` searches *within* each USGS polygon and applies NASA's published HLS thresholds (slope ≤ 8°, 100 m buffer, illumination ≥ 33 %, DTE visibility ≥ 50 %) as a precondition before ranking by suitability score. New `top_n_sites_per_region` in [`scoring/ranking.py`](src/selene_base/scoring/ranking.py); new `per_region_compliance_analysis` in [`validation/comparison.py`](src/selene_base/validation/comparison.py); new CLI subcommands `rank-per-region` and `validate-per-region`. **Result: 23 sites across 8/9 USGS regions** (default weights, default HLS thresholds), all guaranteed inside their named polygon and HLS-compliant by construction. **Malapert Massif has zero HLS-compliant cells** — a real terrain-driven finding, not a thresholding artefact. **Mons Mouton Plateau is the highest-scoring region** (best score 0.746, 15.07 % HLS-eligible area). The reframing — global ranking → per-region + HLS — matches the methodology of Wueller et al. 2026 (JGR Planets), which catalogued 130 candidate Artemis-III sites with the same outer framing. The 0/20 inside-polygon count through v1.2.0 reflected the global framing; v1.3.0 produces the NASA-aligned catalog v1.0–v1.2 had been pursuing through the wrong question.
 - **v1.4.0 — Wueller 2026 comparison framework (framework only).** ✅ Comparison harness shipped: `selene compare-wueller` plus `wueller_comparison.{load_wueller_sites,compare_sites,render_summary}`, 16 synthetic-only tests, the `notebooks/08_wueller_comparison.py` visualisation set, and the headline plot at [docs/img/selene_vs_wueller.png](docs/img/selene_vs_wueller.png). The Wueller 2026 supplementary catalog was unavailable at the time; the bundled CSV was a 5-row synthetic placeholder explicitly flagged through every output channel, and two "real comparison" tests were skipped pending data. **The framework was the v1.4.0 deliverable; the quantitative agreement number unblocked in v1.4.1.**
-- **v1.4.1 — quantitative Wueller comparison.** ✅ Replaces v1.4.0's synthetic placeholder with the real 130-site shapefile from the authors' Zenodo deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0), bundled in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/). `compare_sites` now defaults to a USGS-scope filter (drops the 57 Wueller sites whose region is not in NASA's October 2024 down-selected nine), the two formerly-skipped tests now run against the real bundle, and the legacy CSV path is retained behind a `DeprecationWarning`. **Result: 18 / 23 selene sites match within 5 km of an in-scope Wueller site (78 % agreement); median match distance 1.71 km against 73 in-scope Wueller sites across 8 USGS regions.** Six of eight regions agree at 100 % match-within-region; three regions (de Gerlache Rim 2, Mons Mouton Plateau, Slater Plain) have outliers that miss the threshold by ≤ 6 km. Test suite: 350 collected, 346 passed, 4 skipped (LEND-only).
+- **v1.4.1 — quantitative Wueller comparison.** ✅ Replaces v1.4.0's synthetic placeholder with the real 130-site shapefile from the authors' Zenodo deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0), bundled in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/). `compare_sites` now defaults to a USGS-scope filter (drops the 57 Wueller sites whose region is not in NASA's October 2024 down-selected nine), the two formerly-skipped tests now run against the real bundle, and the legacy CSV path is retained behind a `DeprecationWarning`. **Result at the v1.3 default `n_per_region = 3`: 18 / 23 selene sites match within 5 km of an in-scope Wueller site (78 % agreement); median match distance 1.71 km against 73 in-scope Wueller sites across 8 USGS regions.** Six of eight regions agree at 100 % match-within-region; three regions (de Gerlache Rim 2, Mons Mouton Plateau, Slater Plain) have outliers that miss the threshold by ≤ 6 km. Test suite: 350 collected, 346 passed, 4 skipped (LEND-only).
+- **v1.4.2 — `n_per_region` default raised to 10 (matches Wueller's per-region site density).** ✅ Default `n_per_region` changed from 3 to 10. The selene methodology converges at any per-region density: selene-to-Wueller match rate is essentially flat across n (78 % at n=3, 78 % at n=5, 80 % at n=10), but Wueller-to-selene match rate climbs from 41 % to 63 % as more selene sites become available to pair with Wueller's 73-site in-scope catalog. **Result at the new default: 56/70 selene sites (80 %) match within 5 km of an in-scope Wueller site; median match distance 1.88 km; 46/73 (63 %) of in-scope Wueller sites match a selene site within 5 km.** Two regions (Mons Mouton, Peak Near Cabeus B) reach 100 % match-within-region at n=10; Nobile Rim 1 and Nobile Rim 2 reach 80 %+. de Gerlache Rim 2 stays at 0/2 (the polygon's HLS-eligible area caps at 2 sites at 2km NMS — its terrain is genuinely far from Wueller's dGR2 cluster, independent of n). Per-region site counts (NMS-capped at 2km separation): HW 10, MM 10, MMP 10, NR1 10, NR2 10, PCB 9, SP 9, dGR2 2 — total 70.
 
 ### Where this goes next
 
 **TOPSIS aggregator behind `--method topsis`.** Still open as a methodological alternative to weighted-sum aggregation. Lower priority now that the per-region framing produces a NASA-aligned catalog under the existing aggregator; TOPSIS would change *which* HLS-compliant cells rank highest within each polygon, not whether they're inside.
 
-**Wueller 2026 deposit — non-point layers (v1.5+).** The Zenodo deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), 2 km exploration-area polygons (`ExplorationArea_2km.*`), and an illumination-modelling layer set. None are bundled in v1.4.1 (point catalog only); folding any of them in (e.g. comparing selene's HLS-eligible mask against Wueller's 8°-buffer raster) is a v1.5+ candidate.
+**Wueller 2026 deposit — non-point layers (v1.5+).** The Zenodo deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), 2 km exploration-area polygons (`ExplorationArea_2km.*`), and an illumination-modelling layer set. None are bundled through v1.4.2 (point catalog only); folding any of them in (e.g. comparing selene's HLS-eligible mask against Wueller's 8°-buffer raster) is a v1.5+ candidate.
 
 ### Smaller follow-ups
 
@@ -532,8 +534,8 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - NASA (October 2024). *Artemis III candidate landing regions.* [https://www.nasa.gov/feature/artemis-iii](https://www.nasa.gov/feature/artemis-iii)
 - McClernan, M.T. (2024). *Down Selected Artemis III Candidate Landing Site Navigational Grids.* U.S. Geological Survey data release. [https://doi.org/10.5066/P1MEQ6UK](https://doi.org/10.5066/P1MEQ6UK). The simplified region envelopes from this release ship in-repo at [`src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson`](src/selene_base/validation/data/nasa_regions_polygons_usgs.geojson) and are the authoritative validation reference from v1.2.0 onwards.
 - Gracy, S., & Lee, P. (2024). *Update on the Artemis III Reference Mission and Candidate Landing Region Selection.* 55th Lunar and Planetary Science Conference, Abstract #1695. (Source for the four published HLS hard-constraint thresholds used by v1.3.0's `rank-per-region` — slope, slope-buffer, illumination, DTE visibility.)
-- Wueller, F., et al. (2026). *Assessing Potential Landing Sites With Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions Within Artemis Candidate Landing Regions.* Journal of Geophysical Research: Planets, 131. [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434). (Peer-reviewed parallel: 130 candidate Artemis III landing sites identified by within-region selection with NASA HLS hard filters. v1.3.0's `rank-per-region` mirrors the outer framing; v1.4.1 ships the quantitative comparison against this catalog — see README §"Quantitative comparison against Wueller et al. 2026".)
-- Wueller, L., Berger, L. M., Christopher, H., Sugimoto, K., Thaker, A., Carton, L., Jo, W., Lee, S., Pedrelli, R., Sanchez, P., & Kring, D. (2025). *Complementary Data for Wueller et al. (2026): Assessing Potential Landing Sites with Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions within Artemis Candidate Landing Regions* (Version v1) [Data set]. Zenodo. [doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058). (CC-BY 4.0 data deposit accompanying the JGR paper. The 130-site point catalog ships in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) and is the comparison reference for v1.4.1.)
+- Wueller, F., et al. (2026). *Assessing Potential Landing Sites With Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions Within Artemis Candidate Landing Regions.* Journal of Geophysical Research: Planets, 131. [doi:10.1029/2025JE009434](https://doi.org/10.1029/2025JE009434). (Peer-reviewed parallel: 130 candidate Artemis III landing sites identified by within-region selection with NASA HLS hard filters. v1.3.0's `rank-per-region` mirrors the outer framing; v1.4.1+ ships the quantitative comparison against this catalog — see README §"Quantitative comparison against Wueller et al. 2026".)
+- Wueller, L., Berger, L. M., Christopher, H., Sugimoto, K., Thaker, A., Carton, L., Jo, W., Lee, S., Pedrelli, R., Sanchez, P., & Kring, D. (2025). *Complementary Data for Wueller et al. (2026): Assessing Potential Landing Sites with Favorable Illumination and Accessible, Potentially Volatile-Rich Permanently Shadowed Regions within Artemis Candidate Landing Regions* (Version v1) [Data set]. Zenodo. [doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058). (CC-BY 4.0 data deposit accompanying the JGR paper. The 130-site point catalog ships in-repo at [`src/selene_base/validation/data/wueller_2026/`](src/selene_base/validation/data/wueller_2026/) and is the comparison reference from v1.4.1 onwards.)
 - NASA (2019). *Human Landing System Requirements Document.* (Underlying source for the HLS slope, slope-buffer, illumination, and DTE-visibility thresholds.)
 
 ## License

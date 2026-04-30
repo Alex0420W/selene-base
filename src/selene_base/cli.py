@@ -225,7 +225,7 @@ def rank(
 @app.command(name="rank-per-region")
 def rank_per_region(
     n_per_region: int = typer.Option(
-        3,
+        10,
         "--n-per-region",
         min=1,
         help="Maximum number of HLS-compliant sites to extract per USGS region.",

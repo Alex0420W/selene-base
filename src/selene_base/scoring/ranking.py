@@ -217,7 +217,7 @@ def top_n_sites_per_region(
     illumination: xr.DataArray,
     los_visibility: xr.DataArray,
     sub_scores: Mapping[str, xr.DataArray] | None = None,
-    n_per_region: int = 3,
+    n_per_region: int = 10,
     min_distance_m: float = 2000.0,
     hls_slope_max_deg: float = HLS_SLOPE_MAX_DEG,
     hls_buffer_m: float = HLS_BUFFER_M,
@@ -268,10 +268,11 @@ def top_n_sites_per_region(
             ``score_map``.
         sub_scores: Optional per-criterion score grids; sampled at each
             accepted site to populate the ``score_<crit>`` columns.
-        n_per_region: Maximum sites to return per polygon. Default 3
-            matches the Wueller et al. 2026 / NASA Artemis-III selection
-            cadence (a small handful of candidate landing pads per
-            region).
+        n_per_region: Maximum sites to return per polygon. Default 10
+            matches the upper end of Wueller et al. 2026's per-region
+            site density (5–11 sites per region). The NMS at
+            ``min_distance_m`` separation caps the actual count below
+            this for small regions.
         min_distance_m: Minimum pairwise distance between sites within
             the same region, in metres. Default 2 km — tighter than the
             global rank's 5 km because each polygon is small (~400 km²

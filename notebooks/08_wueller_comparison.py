@@ -1,10 +1,10 @@
 # %% [markdown]
-# # Quantitative comparison vs Wueller et al. 2026 (v1.4.1)
+# # Quantitative comparison vs Wueller et al. 2026 (v1.4.2)
 #
 # Wueller, F., et al. (2026), JGR Planets, doi:10.1029/2025JE009434,
 # published 130 candidate Artemis III landing sites identified by the
 # same outer methodology selene-base implements (NASA HLS hard filters
-# followed by within-region selection). v1.4.1 runs the comparison
+# followed by within-region selection). v1.4.2 runs the comparison
 # against the real 130-site shapefile from the authors' Zenodo deposit
 # (doi:10.5281/zenodo.17084058, CC-BY 4.0), bundled in-repo at
 # `src/selene_base/validation/data/wueller_2026/LandingSites.shp`.
@@ -19,7 +19,7 @@
 #
 # ```
 # selene preprocess && selene score
-# selene rank-per-region --n-per-region 3
+# selene rank-per-region
 # ```
 
 # %%
@@ -146,7 +146,7 @@ ax.set_xlabel("polar stereographic x (m)")
 ax.set_ylabel("polar stereographic y (m)")
 banner = " (SYNTHETIC PLACEHOLDER)" if USING_PLACEHOLDER else ""
 ax.set_title(
-    f"selene-base v1.3 vs Wueller 2026{banner} -- "
+    f"selene-base v1.4.2 vs Wueller 2026{banner} -- "
     f"{result['n_selene_matched']}/{result['n_selene_sites']} selene matched, "
     f"{result['n_wueller_matched']}/{result['n_wueller_sites']} Wueller matched "
     f"(threshold = {result['match_threshold_km']:.1f} km)"

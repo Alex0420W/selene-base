@@ -12,7 +12,7 @@
 # ```
 # selene preprocess
 # selene score
-# selene rank-per-region --n-per-region 3
+# selene rank-per-region
 # ```
 #
 # HLS thresholds (NASA HLS spec; Gracy & Lee 2024 LPSC #1695; Wueller

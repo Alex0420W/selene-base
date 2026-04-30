@@ -1,5 +1,5 @@
 # %% [markdown]
-# # v1.4.1 headline image (combined per-region catalog + Wueller agreement)
+# # v1.4.2 headline image (combined per-region catalog + Wueller agreement)
 #
 # Single-purpose notebook: produces `docs/img/headline_v141.png`, the
 # README's top-of-page visual. Combines the v1.3 per-region selene
@@ -257,7 +257,7 @@ median_km = result["median_match_distance_km"]
 pct = round(100 * n_matched / n_total)
 
 fig.suptitle(
-    f"selene-base v1.4.1: {n_total} sites across 8/9 USGS regions; "
+    f"selene-base v1.4.2: {n_total} sites across 8/9 USGS regions; "
     f"{pct}% match within 5 km of Wueller 2026 (median {median_km:.2f} km)",
     fontsize=21,
     fontweight="bold",
