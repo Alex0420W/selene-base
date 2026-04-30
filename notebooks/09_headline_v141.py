@@ -38,26 +38,30 @@ OUT_DIR = Path("docs/img")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 SELENE_SITES_GEOJSON = Path("data/outputs/per_region/sites.geojson")
 
-# Plot bounds: ±200 km, slightly tighter than the ±304 km full grid
-# since every candidate site clusters near the pole.
-EXTENT_KM = 200
+# Anchored bounds (metres). ±150/±160 zoom would crop Peak Near Cabeus B
+# (centroid -180 km) and Nobile Rim 2 (centroid +157 km, polygon edge
+# +167 km), so we anchor explicitly to the data extent with ~10 km
+# buffer on each side. This drops empty space in the south while
+# keeping every USGS polygon visible.
+PLOT_XMIN = -200_000
+PLOT_XMAX = +180_000
+PLOT_YMIN = -85_000
+PLOT_YMAX = +200_000
 
-# Manual label offsets (metres) for the central cluster, where four
-# polygons overlap visually. Anchored at the polygon centroid; arrow
-# drawn from the centroid to the offset label position. Offsets aim
-# the labels into the empty quadrants of the +200 km extent.
+# Manual label offsets (metres) for each polygon. Each label sits at a
+# fixed azimuthal direction from its polygon centroid (15-30 km), with
+# a thin connector line back to the centroid. Directions chosen so no
+# two labels overlap and no connector line crosses a data point.
 LABEL_OFFSETS_M: dict[str, tuple[float, float]] = {
-    # Top cluster (+75 to +90 km x, +100 to +150 km y) — fan labels out.
-    "Malapert Massif": (-50_000, +60_000),
-    "Mons Mouton": (-30_000, +60_000),
-    "Mons Mouton Plateau": (+85_000, +35_000),
-    "Nobile Rim 1": (+90_000, -10_000),
-    "Nobile Rim 2": (+30_000, -25_000),
-    # The four outliers — fan into empty space.
-    "Haworth": (-90_000, +25_000),
-    "de Gerlache Rim 2": (-110_000, +5_000),
-    "Peak Near Cabeus B": (+10_000, +30_000),
-    "Slater Plain": (+60_000, -25_000),
+    "Malapert Massif": (+27_000, 0),  # east
+    "Mons Mouton": (0, -22_000),  # south
+    "Mons Mouton Plateau": (0, +25_000),  # north
+    "Haworth": (-30_000, 0),  # west
+    "Nobile Rim 1": (+22_000, -18_000),  # south-east
+    "Nobile Rim 2": (+8_000, +18_000),  # north-east (mostly north so x stays inside)
+    "Peak Near Cabeus B": (-15_000, -12_000),  # west-southwest
+    "Slater Plain": (+55_000, -22_000),  # current placement preserved
+    "de Gerlache Rim 2": (-110_000, +5_000),  # current placement preserved
 }
 
 # %%
@@ -99,13 +103,13 @@ w_id_to_xy = {
 
 # %%
 plt.style.use("default")
-fig, ax = plt.subplots(figsize=(13, 11))
+fig, ax = plt.subplots(figsize=(13, 10))
 fig.patch.set_facecolor("#1a1a1a")
 ax.set_facecolor("#1a1a1a")
 
 # Subtle radial graticule: range rings every 50 km out to 200 km, plus
 # axes through the pole.
-for r_km in (50, 100, 150, 200):
+for r_km in (50, 100, 150):
     circle = plt.Circle(
         (0, 0),
         r_km * 1000,
@@ -170,7 +174,7 @@ for entry in result["per_selene_site"]:
         continue
     sx, sy = sel_id_to_xy[str(entry["site_id"])]
     wx, wy = w_id_to_xy[str(entry["nearest_wueller_id"])]
-    ax.plot([sx, wx], [sy, wy], color="#9ca3af", linewidth=0.9, zorder=7, alpha=0.85)
+    ax.plot([sx, wx], [sy, wy], color="#cbd5e1", linewidth=1.4, zorder=7, alpha=0.95)
 
 # Layer 4: selene sites — solid cyan for matched, outlined for unmatched.
 matched_mask = selene_sites_polar["site_id"].astype(str).isin(matched_selene_ids)
@@ -227,17 +231,18 @@ ax.annotate(
     zorder=12,
 )
 
-# Bounds: ±200 km.
-ax.set_xlim(-EXTENT_KM * 1000, EXTENT_KM * 1000)
-ax.set_ylim(-EXTENT_KM * 1000, EXTENT_KM * 1000)
+# Anchored bounds (asymmetric) — see PLOT_XMIN etc above.
+ax.set_xlim(PLOT_XMIN, PLOT_XMAX)
+ax.set_ylim(PLOT_YMIN, PLOT_YMAX)
 ax.set_aspect("equal")
 
 # Tick labels in km for readability.
-tick_m = [-200_000, -100_000, 0, 100_000, 200_000]
-ax.set_xticks(tick_m)
-ax.set_yticks(tick_m)
-ax.set_xticklabels([f"{t // 1000:+d} km" for t in tick_m], color="#d1d5db")
-ax.set_yticklabels([f"{t // 1000:+d} km" for t in tick_m], color="#d1d5db")
+x_ticks = [-200_000, -100_000, 0, 100_000]
+y_ticks = [-50_000, 0, 50_000, 100_000, 150_000, 200_000]
+ax.set_xticks(x_ticks)
+ax.set_yticks(y_ticks)
+ax.set_xticklabels([f"{t // 1000:+d} km" for t in x_ticks], color="#d1d5db")
+ax.set_yticklabels([f"{t // 1000:+d} km" for t in y_ticks], color="#d1d5db")
 ax.tick_params(colors="#d1d5db")
 for spine in ax.spines.values():
     spine.set_color("#3a3a3a")
@@ -254,15 +259,16 @@ pct = round(100 * n_matched / n_total)
 fig.suptitle(
     f"selene-base v1.4.1: {n_total} sites across 8/9 USGS regions; "
     f"{pct}% match within 5 km of Wueller 2026 (median {median_km:.2f} km)",
-    fontsize=15,
-    color="white",
-    y=0.975,
+    fontsize=21,
+    fontweight="bold",
+    color="#ffffff",
+    y=0.985,
 )
 ax.set_title(
     "Comparison against Wueller et al. 2026 (JGR Planets, doi:10.1029/2025JE009434), "
     "CC-BY 4.0 data deposit",
-    fontsize=10,
-    color="#d1d5db",
+    fontsize=11,
+    color="#e5e7eb",
     pad=14,
 )
 
@@ -330,7 +336,7 @@ legend = ax.legend(
 for text in legend.get_texts():
     text.set_color("white")
 
-fig.tight_layout(rect=(0, 0, 1, 0.94))
+fig.tight_layout(rect=(0, 0, 1, 0.92))
 out_path = OUT_DIR / "headline_v141.png"
 fig.savefig(out_path, dpi=130, facecolor=fig.get_facecolor(), bbox_inches="tight")
 plt.close(fig)
