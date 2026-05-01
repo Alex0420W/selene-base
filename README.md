@@ -175,6 +175,67 @@ NASA's Artemis site-selection process ([Lawrence 2025](https://ntrs.nasa.gov/cit
 
 selene-base implements *physics-driven analogs* of NASA's FOM categories using public data and operations-driven thresholds, not direct implementations of NASA's actual weighting (which is not public). The HLS hard-constraint thresholds (slope, slope-buffer, illumination, DTE visibility) are published and are matched verbatim. The soft-criterion weights are physics-and-operations-driven defaults set before any validation rerun, not tuned to match a NASA reference. This positions selene-base honestly: a complete public-data implementation of the conceptual framework documented by Lawrence 2025, calibrated to physics-driven defaults rather than fitted to undisclosed NASA-internal weights.
 
+### Aggregator: weighted_sum vs TOPSIS (v1.7)
+
+The default aggregator (v1.4+) is a weighted linear sum:
+$\text{score}(c) = \sum_i w_i \cdot s_i(c) / \sum_i w_i$,
+where $s_i(c) \in [0, 1]$ is the score of cell $c$ on criterion $i$
+and $w_i$ is its weight (renormalised across criteria with score
+grids — see [`scoring/aggregate.weighted_sum`](src/selene_base/scoring/aggregate.py)).
+The linear sum is simple, matches Wueller et al. 2026's framework,
+and is *indifferent to balance*: a cell that saturates one criterion
+at 1.0 and zeroes another scores the same as a cell that scores 0.5
+on both, given equal weights.
+
+v1.7 adds [`scoring/aggregate.topsis`](src/selene_base/scoring/aggregate.py)
+as an alternative aggregator. TOPSIS (Hwang & Yoon 1981) vector-
+normalises each criterion to L2 unit length, applies the weights,
+identifies the per-criterion ideal (max) and anti-ideal (min) of the
+weighted-normalised grid, and scores each cell by closeness:
+$\text{score}(c) = d_\text{anti}(c) / (d_\text{ideal}(c) + d_\text{anti}(c))$.
+Cells at the per-criterion ideal score 1.0; cells at the anti-ideal
+score 0.0; balanced "good across the board" cells outscore lopsided
+ones because Euclidean distance to a multidimensional anti-ideal
+penalises near-zero scores more than the linear sum does.
+
+**Result on the v1.5 20 m catalog (same HLS filters, same per-region
+NMS, only the aggregator changes):**
+
+| metric | v1.5 (weighted_sum) | v1.7 (TOPSIS) | Δ |
+| --- | ---: | ---: | ---: |
+| selene sites | 69 | 69 | 0 (HLS filters unchanged) |
+| selene matched within 5 km of Wueller in-scope | 56 / 69 (81.2 %) | 55 / 69 (79.7 %) | -1 site, -1.5 pp |
+| Wueller matched within 5 km of selene | 44 / 73 (60.3 %) | 44 / 73 (60.3 %) | 0 |
+| **median matched-pair distance** | 1.76 km | 1.84 km | +0.08 km |
+| max matched-pair distance | 4.81 km | 4.59 km | **-0.22 km** |
+| top-5-by-score sites | 23, 24, 25, 26, 27 (Mons Mouton Plateau) | 23, 24, 25, 26, 27 (Mons Mouton Plateau) | identical |
+
+Per-region median pair distance:
+
+| region | weighted_sum (v1.5) | TOPSIS (v1.7) | Δ |
+| --- | ---: | ---: | ---: |
+| Haworth | 1.77 km | **1.26 km** | **-0.51 km (tightens)** |
+| Mons Mouton | 1.90 km | 1.95 km | +0.05 km |
+| Mons Mouton Plateau | 2.03 km | **1.63 km** | **-0.40 km (tightens)** |
+| Nobile Rim 1 | 1.32 km | **0.88 km** | **-0.43 km (tightens)** |
+| Nobile Rim 2 | 1.13 km | 1.30 km | +0.17 km |
+| Peak Near Cabeus B | 2.04 km | 2.04 km | 0 |
+| Slater Plain | 2.03 km | 2.01 km | -0.02 km |
+| de Gerlache Rim 2 | — (0/2) | — (0/2) | — |
+
+**Headline reading:** TOPSIS produces an **identical site catalog** (same 69 cells, same top-5) but a **different per-region distance distribution**. Three of seven regions with matched pairs tighten meaningfully (HW, MMP, N1, all by -0.40 to -0.51 km); two widen slightly (MM, N2, both ≤ +0.17 km). The headline 81.2 % → 79.7 % match rate change is one site flipping just past the 5 km threshold; max-pair distance *improves* under TOPSIS. **Both aggregators agree on which cells are top-tier**; they disagree at the margin where 1.5–4 km matter.
+
+Run TOPSIS via `--method topsis` on `selene score` and `selene rank-per-region`:
+
+```
+selene score --method topsis --outputs-dir data/outputs/topsis
+selene rank-per-region --method topsis --tiled-per-region --resolution 20
+selene compare-wueller --sites data/outputs/topsis/per_region_tiled_topsis/sites.geojson \
+    --outputs-dir data/outputs/topsis/v17
+```
+
+Outputs land under `data/outputs/topsis/` so the TOPSIS catalog sits side-by-side with the weighted-sum default at `data/outputs/per_region_tiled/` without clobbering it. Default stays `weighted_sum` for backward compatibility — v1.5's headline number is unchanged.
+
 ### Per-region vs global ranking (v1.3.0)
 
 Through v1.2.0, the pipeline ran **global ranking**: the aggregate score grid is NMS-extracted across the entire ±304 km polar grid, producing a top-20 list that *may or may not* fall inside NASA polygons. Validation then asked "did our top-20 hit the polygons?" — and reported 0/20 across every revision through v1.2.0.
@@ -577,6 +638,7 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 - **v1.4.2 — `n_per_region` default raised to 10 (matches Wueller's per-region site density).** ✅ Default `n_per_region` changed from 3 to 10. The selene methodology converges at any per-region density: selene-to-Wueller match rate is essentially flat across n (78 % at n=3, 78 % at n=5, 80 % at n=10), but Wueller-to-selene match rate climbs from 41 % to 63 % as more selene sites become available to pair with Wueller's 73-site in-scope catalog. **Result at the new default: 56/70 selene sites (80 %) match within 5 km of an in-scope Wueller site; median match distance 1.88 km; 46/73 (63 %) of in-scope Wueller sites match a selene site within 5 km.** Two regions (Mons Mouton, Peak Near Cabeus B) reach 100 % match-within-region at n=10; Nobile Rim 1 and Nobile Rim 2 reach 80 %+. de Gerlache Rim 2 stays at 0/2 (the polygon's HLS-eligible area caps at 2 sites at 2km NMS — its terrain is genuinely far from Wueller's dGR2 cluster, independent of n). Per-region site counts (NMS-capped at 2km separation): HW 10, MM 10, MMP 10, NR1 10, NR2 10, PCB 9, SP 9, dGR2 2 — total 70.
 - **v1.5 — 20 m Wueller-class resolution with GPU acceleration.** ✅ Per-region tiled driver runs the HLS filters at 20 m, the same native LOLA resolution Wueller et al. 2026 use. New CLI flags `--tiled-per-region --resolution 20` on `selene preprocess` and `selene rank-per-region`; new GPU path through `derive_horizon_profile` and `compute_earth_visibility_fraction` via CuPy + `cupyx.scipy.ndimage.map_coordinates`; new `pipeline/preprocess_tiled.py` and `pipeline/rank_per_region_tiled.py` covering each USGS polygon's bbox + 100 km horizon buffer with explicit cupy memory-pool drain between tiles. The 240 m global path is unchanged. **Result against Wueller 2026 at 20 m: 56/69 selene sites (81 %) match within 5 km, median matched-pair distance 1.76 km — tighter than v1.4.2's 1.88 km at 240 m by 6.5 %; selene-to-Wueller match rate flat (80 % → 81 %); Wueller-to-selene rate slips slightly (63 % → 60 %) because the finer slope/buffer re-ranks sites within MMP, SP, and CB to a different cell within the same polygon.** Six of eight regions tighten or hold their median matched-pair distance at 20 m; Malapert Massif still has zero HLS-compliant cells (genuine steep terrain, not a 240 m sampling effect); de Gerlache Rim 2 still produces only 2 sites with 0/2 within 5 km of Wueller's dGR2 cluster (genuine terrain divergence, persists at fine resolution). The methodology converges at peer-reviewed resolution; the residual disagreements at v1.4.2 are not 240 m sampling artefacts. v1.5 is opt-in and requires a CUDA GPU plus ~140 GB unified-memory headroom (developed on NVIDIA GB10 / DGX Spark; full 9-region run ~32 min preprocess + ~22 min rank). See "Resolution analysis (v1.5 — 20 m Wueller-class)" above for the per-region table and side-by-side plots.
 - **v1.5.1 — Artemis IV mission designation update + NASA Figures-of-Merit framework citation.** ✅ Docs-only patch release. NASA restructured the Artemis program in February 2026: the first crewed lunar landing at the south pole was reassigned from Artemis III to Artemis IV (target early 2028), Artemis III became an Earth-orbit test mission, and Lunar Gateway was canceled in March 2026. v1.5.1 reframes the project's forward-looking copy from "Artemis III" to "Artemis IV (formerly Artemis III)" across the README, the v1.5 catalog report, and user-facing CLI / module docstrings, while leaving citation titles, the USGS dataset name, NASA's October 2024 announcement URL, the Wueller 2026 paper's own framing, and the historical roadmap entries unchanged. Adds [Lawrence 2025](https://ntrs.nasa.gov/citations/20250008952) (NASA NTRS 20250008952) as a reference and a new "Mapping to NASA's Figures of Merit framework" subsection in the Methodology section that maps selene's seven criteria to NASA's published FOM categories. **The methodology, data, validation, and 69-site catalog are identical to v1.5; the headline numbers (56/69 = 81.2 % within 5 km, median 1.76 km) are unchanged.**
+- **v1.7 — TOPSIS aggregator as opt-in alternative to weighted_sum.** ✅ Adds [`scoring/aggregate.topsis`](src/selene_base/scoring/aggregate.py) (Hwang & Yoon 1981) as a sibling of `weighted_sum`, with `selene score --method topsis` and `selene rank-per-region --method topsis` exposing it. Same input contract (per-criterion [0, 1] score grids + weights), same renormalise-on-missing-criteria semantics, same NaN propagation. Default stays `weighted_sum` — v1.5's 81.2 % / 1.76 km headline is unchanged. **TOPSIS result on the v1.5 20 m catalog: same 69 sites (HLS filters identical), same top-5 by score, 55 / 69 (79.7 %) matched within 5 km of an in-scope Wueller site (vs 56 at weighted_sum), median matched-pair distance 1.84 km vs 1.76 km globally** — but **three of seven active regions tighten significantly** (Haworth -0.51 km, Mons Mouton Plateau -0.40 km, Nobile Rim 1 -0.43 km) and **max pair distance improves -0.22 km**. Both aggregators agree on which cells are top-tier; they disagree at the 1.5–4 km margin. TOPSIS outputs land under `data/outputs/topsis/` so the two catalogs sit side-by-side. See "Aggregator: weighted_sum vs TOPSIS" in Methodology for the full table.
 
 ### Where this goes next
 

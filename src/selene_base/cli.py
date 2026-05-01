@@ -254,6 +254,20 @@ def score(
         "--overwrite",
         help="Re-compute per-criterion score COGs even if cached.",
     ),
+    method: str = typer.Option(
+        "weighted_sum",
+        "--method",
+        help=(
+            "Aggregator to combine the per-criterion score grids. "
+            "'weighted_sum' (default, v1.4+) is a renormalising weighted "
+            "linear sum. 'topsis' (v1.7) is the Hwang & Yoon 1981 "
+            "Technique for Order Preference by Similarity to Ideal "
+            "Solution — same input + weights, but rewards balanced "
+            "profiles over lopsided ones (a cell that saturates one "
+            "criterion at the cost of zeroing another scores lower than "
+            "an even-but-moderate cell with the same weighted sum)."
+        ),
+    ),
 ) -> None:
     """Run every available criterion and aggregate into one score map.
 
@@ -261,12 +275,18 @@ def score(
     the remaining weights are renormalised. Output:
     ``<outputs_dir>/score_southpole.tif``.
     """
+    if method not in ("weighted_sum", "topsis"):
+        raise typer.BadParameter(
+            f"--method must be one of 'weighted_sum' or 'topsis' (got {method!r})",
+            param_hint="--method",
+        )
     _score.run(
         weights_path=weights,
         region_config=region_config,
         processed_dir=processed_dir,
         outputs_dir=outputs_dir,
         overwrite=overwrite,
+        method=method,  # type: ignore[arg-type]
     )
 
 
@@ -374,6 +394,22 @@ def rank_per_region(
             "(repeatable). Default: all 9 regions."
         ),
     ),
+    method: str = typer.Option(
+        "weighted_sum",
+        "--method",
+        help=(
+            "Aggregator the consumed score map was produced with. "
+            "'weighted_sum' (default) reads <outputs-dir>/score_southpole.tif "
+            "and writes per_region(_tiled)/. 'topsis' (v1.7) reads "
+            "<outputs-dir>/topsis/score_southpole.tif and writes "
+            "per_region(_tiled)_topsis/, so a topsis catalog can sit "
+            "side-by-side with the weighted-sum catalog without "
+            "clobbering it. Run `selene score --method topsis "
+            "--outputs-dir data/outputs/topsis` first to produce the "
+            "topsis aggregate, then this command picks it up. Override "
+            "explicitly with --score-map and --outputs-dir if needed."
+        ),
+    ),
 ) -> None:
     """Rank top-N HLS-compliant sites *within each USGS region*.
 
@@ -386,16 +422,36 @@ def rank_per_region(
     With ``--tiled-per-region`` (v1.5 mode), the HLS filters and NMS run
     on a per-tile high-resolution grid using the v1.5 horizon profile.
     """
+    if method not in ("weighted_sum", "topsis"):
+        raise typer.BadParameter(
+            f"--method must be one of 'weighted_sum' or 'topsis' (got {method!r})",
+            param_hint="--method",
+        )
+    # When --method=topsis, default the score-map and outputs-subdir to
+    # the topsis-suffixed location so a topsis catalog can sit alongside
+    # the default weighted-sum catalog without clobbering it. Explicit
+    # --score-map / --outputs-dir overrides win.
+    effective_score_map = score_map
+    effective_outputs_dir = outputs_dir
+    per_region_subdir = "per_region_tiled" if tiled_per_region else "per_region"
+    if method == "topsis":
+        if score_map is None:
+            effective_score_map = Path("data/outputs/topsis/score_southpole.tif")
+        if outputs_dir == Path("data/outputs"):
+            effective_outputs_dir = Path("data/outputs/topsis")
+        per_region_subdir = "per_region_tiled_topsis" if tiled_per_region else "per_region_topsis"
+
     if tiled_per_region:
         resolution_m = _parse_resolution(resolution) if resolution is not None else 20
         _rank_per_region_tiled.run(
             resolution_m=float(resolution_m),
             region_codes=region_code if region_code else None,
             processed_dir=processed_dir,
-            outputs_dir=outputs_dir,
-            score_map_path=score_map,
+            outputs_dir=effective_outputs_dir,
+            score_map_path=effective_score_map,
             n_per_region=n_per_region,
             min_distance_km=min_distance_km,
+            per_region_subdir=per_region_subdir,
         )
         return
 
@@ -410,11 +466,12 @@ def rank_per_region(
             param_hint="--region-code",
         )
     _rank_per_region.run(
-        score_map_path=score_map,
+        score_map_path=effective_score_map,
         processed_dir=processed_dir,
-        outputs_dir=outputs_dir,
+        outputs_dir=effective_outputs_dir,
         n_per_region=n_per_region,
         min_distance_km=min_distance_km,
+        per_region_subdir=per_region_subdir,
     )
 
 
