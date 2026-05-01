@@ -256,6 +256,12 @@ def process_tile(
         los_tile = los_to_earth.compute_earth_visibility_fraction(
             horizon_tile, pixel_lat, pixel_lon, gamma
         )
+    # Drop the heaviest temporaries (~17 GB float32 horizon profile +
+    # ~3 GB lat/lon/gamma) immediately. They are not needed past this
+    # point; on GB10 unified memory they otherwise crowd both numpy and
+    # cupy out of DRAM during the remaining HLS / NMS work.
+    del horizon_tile, pixel_lat, pixel_lon, gamma
+    _free_gpu_memory()
 
     # ---- 240 m global rasters resampled onto the tile ----
     illum_tile = _resample_global_to_tile_grid(illumination_global, template)
@@ -311,6 +317,13 @@ def process_tile(
             f"({polygon_cell_area_km2:.1f} km² polygon, {eligible_area_km2:.2f} km² eligible)"
         )
         elapsed = time.perf_counter() - t0
+        # Match the late-return cleanup so an empty-polygon tile does not
+        # leak cupy + numpy state into the next iteration. (horizon_tile,
+        # pixel_lat/lon, gamma were already released after the LOS call.)
+        del los_tile, illum_tile, score_tile, slope_tile, elev_tile
+        del score_arr, slope_arr, illum_arr, los_arr
+        del polygon_mask, safe_slope_mask, distance_to_steep_m, compliant_mask
+        _free_gpu_memory()
         return rows, TileRankResult(
             region_name=spec.region_name,
             region_code=spec.region_code,
@@ -393,10 +406,12 @@ def process_tile(
         f"{elapsed:.1f} s"
     )
 
-    # Drop the per-tile arrays before next region; LOS visibility is the
-    # heaviest temporary (24 libration samples × 36 az × HxW).
-    del horizon_tile, los_tile, illum_tile, score_tile, slope_tile, elev_tile
-    del pixel_lat, pixel_lon, gamma
+    # Drop the per-tile arrays before next region. (horizon_tile,
+    # pixel_lat/lon, gamma were released after the LOS call.)
+    del los_tile, illum_tile, score_tile, slope_tile, elev_tile
+    del score_arr, slope_arr, illum_arr, los_arr
+    del polygon_mask, safe_slope_mask, distance_to_steep_m, compliant_mask
+    del sub_score_tiles
     _free_gpu_memory()
 
     return rows, TileRankResult(
@@ -528,24 +543,52 @@ def run(
                 )
             )
             continue
-        rows, summary = process_tile(
-            spec,
-            elevation_source=elevation_source,
-            horizon_npz=npz,
-            illumination_global=illumination_global,
-            score_global=score_global,
-            sub_scores_global=sub_scores_global,
-            polygon=region.geometry,
-            resolution_m=resolution_m,
-            target_crs=target_crs,
-            n_per_region=n_per_region,
-            min_distance_m=min_distance_km * 1000.0,
-            hls_slope_max_deg=hls_slope_max_deg,
-            hls_buffer_m=hls_buffer_m,
-            hls_illumination_min=hls_illumination_min,
-            hls_dte_visibility_min=hls_dte_visibility_min,
-            echo=echo,
-        )
+        try:
+            rows, summary = process_tile(
+                spec,
+                elevation_source=elevation_source,
+                horizon_npz=npz,
+                illumination_global=illumination_global,
+                score_global=score_global,
+                sub_scores_global=sub_scores_global,
+                polygon=region.geometry,
+                resolution_m=resolution_m,
+                target_crs=target_crs,
+                n_per_region=n_per_region,
+                min_distance_m=min_distance_km * 1000.0,
+                hls_slope_max_deg=hls_slope_max_deg,
+                hls_buffer_m=hls_buffer_m,
+                hls_illumination_min=hls_illumination_min,
+                hls_dte_visibility_min=hls_dte_visibility_min,
+                echo=echo,
+            )
+        except Exception as exc:
+            # Don't let a single corrupt NPZ or transient OOM throw away
+            # the work already done on the other 8 tiles. Record the
+            # failure in the summary and continue.
+            echo(
+                f"[tile-rank] {region['Region']} ({code}): FAILED — "
+                f"{type(exc).__name__}: {exc}"
+            )
+            summaries.append(
+                TileRankResult(
+                    region_name=str(region["Region"]),
+                    region_code=code,
+                    n_sites=0,
+                    eligible_area_km2=0.0,
+                    polygon_cell_area_km2=0.0,
+                    best_score=None,
+                    mean_score=None,
+                    elapsed_s=0.0,
+                )
+            )
+            continue
+        finally:
+            # Defence in depth: even if process_tile raises, drop the
+            # cupy memory pool before moving to the next polygon. On GB10
+            # unified memory, GPU allocations come from the same DRAM as
+            # numpy, so leaked GPU blocks crash the next tile via OOM.
+            _free_gpu_memory()
         all_rows.extend(rows)
         summaries.append(summary)
 
