@@ -54,7 +54,8 @@ from selene_base.criteria import (
 )
 from selene_base.data.reproject import cache_processed
 from selene_base.pipeline.preprocess import load_region_config
-from selene_base.scoring.aggregate import weighted_sum
+from selene_base.scoring.aggregate import AggregateMethod
+from selene_base.scoring.aggregate import aggregate as _aggregate_fn
 
 DEFAULT_REGION_CONFIG = Path("config/region_southpole.yaml")
 DEFAULT_WEIGHTS = Path("config/weights_default.yaml")
@@ -398,6 +399,7 @@ def run(
     outputs_dir: Path = DEFAULT_OUTPUTS_DIR,
     raw_dir: Path = DEFAULT_RAW_DIR,
     overwrite: bool = False,
+    method: AggregateMethod = "weighted_sum",
     echo: Callable[[str], None] = typer.echo,
 ) -> ScoreSummary:
     """Compute all available criterion scores and aggregate.
@@ -449,7 +451,7 @@ def run(
     score_arrays: dict[str, xr.DataArray] = {
         name: _open_cog(path) for name, path in score_paths.items()
     }
-    aggregate = weighted_sum(score_arrays, weights)
+    aggregate = _aggregate_fn(score_arrays, weights, method=method)
 
     out_path = outputs_dir / "score_southpole.tif"
     aggregate.rio.write_nodata(np.nan, inplace=True)
