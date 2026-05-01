@@ -91,7 +91,8 @@ def download(
         res_m = _parse_resolution(resolution)
         if res_m not in _download.LOLA_RESOLUTIONS_M:
             raise typer.BadParameter(
-                f"--resolution must be one of {_download.LOLA_RESOLUTIONS_M!r} (got {resolution!r})",
+                f"--resolution must be one of {_download.LOLA_RESOLUTIONS_M!r} "
+                f"(got {resolution!r})",
                 param_hint="--resolution",
             )
         path = _download.download_lola(
