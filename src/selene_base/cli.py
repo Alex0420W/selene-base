@@ -21,6 +21,7 @@ from selene_base.pipeline import preprocess as _preprocess
 from selene_base.pipeline import preprocess_tiled as _preprocess_tiled
 from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import rank_per_region as _rank_per_region
+from selene_base.pipeline import rank_per_region_tiled as _rank_per_region_tiled
 from selene_base.pipeline import score as _score
 from selene_base.pipeline import sensitivity as _sensitivity
 from selene_base.pipeline import validate as _validate
@@ -343,6 +344,34 @@ def rank_per_region(
         help="Directory under which the per_region/ subdirectory is written.",
         file_okay=False,
     ),
+    tiled_per_region: bool = typer.Option(
+        False,
+        "--tiled-per-region",
+        help=(
+            "v1.5 mode: rank within per-USGS-region tiles at high resolution. "
+            "Reads horizon_profile_southpole_<resolution>m_<code>.npz produced "
+            "by `selene preprocess --tiled-per-region`, derives 20 m slope and "
+            "Earth-LOS visibility on the tile grid, applies HLS filters at the "
+            "fine resolution, and writes sites to data/outputs/per_region_tiled/."
+        ),
+    ),
+    resolution: str | None = typer.Option(
+        None,
+        "--resolution",
+        help=(
+            "Tiled mode only: analysis-grid resolution (m) of the per-tile "
+            "horizon NPZ produced by `selene preprocess --tiled-per-region`. "
+            "Default 20 m for v1.5."
+        ),
+    ),
+    region_code: list[str] | None = typer.Option(
+        None,
+        "--region-code",
+        help=(
+            "Tiled mode only: restrict the run to one or more USGS RegionCodes "
+            "(repeatable). Default: all 9 regions."
+        ),
+    ),
 ) -> None:
     """Rank top-N HLS-compliant sites *within each USGS region*.
 
@@ -351,7 +380,33 @@ def rank_per_region(
     USGS-published Artemis III polygon, then ranks the survivors by
     aggregate score. Sites are guaranteed inside their named polygon
     by construction.
+
+    With ``--tiled-per-region`` (v1.5 mode), the HLS filters and NMS run
+    on a per-tile high-resolution grid using the v1.5 horizon profile.
     """
+    if tiled_per_region:
+        resolution_m = _parse_resolution(resolution) if resolution is not None else 20
+        _rank_per_region_tiled.run(
+            resolution_m=float(resolution_m),
+            region_codes=region_code if region_code else None,
+            processed_dir=processed_dir,
+            outputs_dir=outputs_dir,
+            score_map_path=score_map,
+            n_per_region=n_per_region,
+            min_distance_km=min_distance_km,
+        )
+        return
+
+    if resolution is not None:
+        raise typer.BadParameter(
+            "--resolution is only honoured in --tiled-per-region mode.",
+            param_hint="--resolution",
+        )
+    if region_code:
+        raise typer.BadParameter(
+            "--region-code is only honoured in --tiled-per-region mode.",
+            param_hint="--region-code",
+        )
     _rank_per_region.run(
         score_map_path=score_map,
         processed_dir=processed_dir,
