@@ -73,6 +73,7 @@ def derive_horizon_profile(
     pixel_size_m: float = 240.0,
     moon_radius_m: float = DEFAULT_MOON_RADIUS_M,
     n_distance_samples: int = 50,
+    use_gpu: bool = False,
 ) -> xr.DataArray:
     """For each pixel, compute the maximum horizon elevation angle in
     ``n_azimuths`` grid-azimuth directions.
@@ -130,6 +131,11 @@ def derive_horizon_profile(
             sample each ray. 50 is enough that the sampled max is
             within a few hundredths of a degree of the continuous max
             for typical polar relief.
+        use_gpu: If ``True``, run the inner ray-march on the GPU via
+            CuPy + ``cupyx.scipy.ndimage.map_coordinates``. The output
+            DataArray remains numpy-backed for downstream compatibility.
+            Numerically equivalent to the CPU path within float32 ULP;
+            see ``tests/test_los_to_earth_gpu.py`` for the tolerance.
 
     Returns:
         DataArray with dims ``(azimuth, y, x)`` and values in degrees.
@@ -152,51 +158,73 @@ def derive_horizon_profile(
     if elevation.ndim != 2:
         raise ValueError(f"elevation must be 2D (y, x), got dims {elevation.dims!r}")
 
-    arr = elevation.to_numpy().astype(np.float32)
+    if use_gpu:
+        try:
+            import cupy as xp
+            from cupyx.scipy.ndimage import map_coordinates as _map_coords
+        except ImportError as exc:
+            raise RuntimeError(
+                "use_gpu=True but cupy is not installed; "
+                "`pip install cupy-cuda13x` (or cupy-cuda12x) on a CUDA host."
+            ) from exc
+    else:
+        xp = np
+        _map_coords = map_coordinates
+
+    arr = xp.asarray(elevation.to_numpy(), dtype=xp.float32)
     height, width = arr.shape
 
+    # distances_m only feeds python scalars into the loop body; keep on host
+    # to avoid a device->host sync per (azimuth, distance) iteration.
     distances_m = np.geomspace(
         pixel_size_m, max_horizon_km * 1000.0, n_distance_samples, dtype=np.float32
     )
 
-    horizon_deg = np.full((n_azimuths, height, width), -90.0, dtype=np.float32)
+    horizon_deg = xp.full((n_azimuths, height, width), -90.0, dtype=xp.float32)
 
-    row_idx = np.arange(height, dtype=np.float32)[:, None]
-    col_idx = np.arange(width, dtype=np.float32)[None, :]
+    row_idx = xp.arange(height, dtype=xp.float32)[:, None]
+    col_idx = xp.arange(width, dtype=xp.float32)[None, :]
 
     for k in range(n_azimuths):
         az_rad = 2.0 * np.pi * k / n_azimuths
         # Step direction in (col, row) per metre. +y_grid points to
         # smaller row indices in a standard COG (positive y resolution
         # ascending), so row_dir flips sign of cos(az).
-        col_dir = np.sin(az_rad)
-        row_dir = -np.cos(az_rad)
+        col_dir = float(np.sin(az_rad))
+        row_dir = float(-np.cos(az_rad))
 
         horizon_az = horizon_deg[k]
         for d_m in distances_m:
             d_pix = float(d_m) / pixel_size_m
             sample_row = row_idx + row_dir * d_pix
             sample_col = col_idx + col_dir * d_pix
-            ele_at_d = map_coordinates(
+            ele_at_d = _map_coords(
                 arr,
-                np.stack(
+                xp.stack(
                     [
-                        np.broadcast_to(sample_row, (height, width)),
-                        np.broadcast_to(sample_col, (height, width)),
+                        xp.broadcast_to(sample_row, (height, width)),
+                        xp.broadcast_to(sample_col, (height, width)),
                     ]
                 ),
                 order=1,
                 mode="constant",
+                # cupyx.scipy.ndimage.map_coordinates JIT only accepts
+                # ``np.nan`` (the module-level singleton) for cval=NaN; passing
+                # a plain ``float('nan')`` or ``np.float32('nan')`` triggers a
+                # codegen bug ("invalid type conversion: out = (Y)nan").
+                # Equivalent on CPU; required on GPU. cupy 14.0.1 / CUDA 13.
                 cval=np.nan,
             )
             curvature_drop = float(d_m) * float(d_m) / (2.0 * moon_radius_m)
             apparent_height = ele_at_d - arr - curvature_drop
-            angle_deg = np.degrees(np.arctan2(apparent_height, float(d_m)))
-            np.fmax(horizon_az, angle_deg, out=horizon_az)
+            angle_deg = xp.degrees(xp.arctan2(apparent_height, float(d_m)))
+            xp.fmax(horizon_az, angle_deg, out=horizon_az)
+
+    horizon_np = horizon_deg.get() if use_gpu else horizon_deg
 
     azimuth_deg = np.degrees(2.0 * np.pi * np.arange(n_azimuths) / n_azimuths)
     out = xr.DataArray(
-        horizon_deg,
+        horizon_np,
         dims=("azimuth", *elevation.dims),
         coords={
             "azimuth": azimuth_deg,
