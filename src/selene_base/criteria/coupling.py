@@ -1,6 +1,6 @@
 """Spatial-coupling criterion — scores cells by joint proximity.
 
-NASA's Artemis III candidate regions cluster along the lunar south
+NASA's Artemis IV (formerly Artemis III) candidate regions cluster along the lunar south
 polar rim system, where each candidate is simultaneously a few
 kilometres from a permanently-shadowed water-ice deposit *and* a few
 kilometres from a sustained-illumination ridge. A linear-sum aggregator

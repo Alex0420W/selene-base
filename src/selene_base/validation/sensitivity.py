@@ -275,7 +275,7 @@ def sweep_coupling_distance(
             :func:`selene_base.criteria.coupling.derive_distance_to_sunlit_ridge`.
         weights: Weight vector (must include ``coupling`` plus every
             entry in ``score_maps_without_coupling``).
-        nasa_regions: NASA Artemis III GeoDataFrame from
+        nasa_regions: NASA Artemis IV (formerly Artemis III) GeoDataFrame from
             :func:`selene_base.validation.nasa_regions.regions_to_geodataframe`.
         distances_km: List of coupling-distance values to test.
             Defaults to ``[1, 2, 3, 5, 7, 10, 15, 20]`` km.

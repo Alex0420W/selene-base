@@ -1,4 +1,4 @@
-"""NASA's nine announced Artemis III candidate landing regions.
+"""NASA's nine announced Artemis IV (formerly Artemis III) candidate landing regions.
 
 Two parallel representations live here:
 
@@ -57,7 +57,7 @@ USGS_REGION_NAMES: tuple[str, ...] = (
 
 
 class CandidateRegion(TypedDict):
-    """One NASA Artemis III candidate region."""
+    """One NASA Artemis IV (formerly Artemis III) candidate region."""
 
     name: str
     lat: float
@@ -131,7 +131,7 @@ def regions_to_geodataframe(target_crs: str | None = None) -> gpd.GeoDataFrame:
 
 
 def regions_polygons_to_geodataframe(target_crs: str | None = None) -> gpd.GeoDataFrame:
-    """Load USGS-published Artemis III candidate region envelopes.
+    """Load USGS-published Artemis IV (formerly Artemis III) candidate region envelopes.
 
     The polygons are the **simplified** USGS envelopes of NASA's nine
     candidate regions — 4-vertex quadrilaterals in lunar planetocentric

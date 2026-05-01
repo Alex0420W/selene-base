@@ -92,7 +92,7 @@ def test_html_contains_layer_names_and_per_site_markers(tmp_path: Path) -> None:
     build_map(score_cog, sites, nasa, out)
     html = out.read_text(encoding="utf-8")
     assert "Aggregate suitability score" in html
-    assert "NASA Artemis III" in html
+    assert "NASA Artemis IV" in html
     assert "selene-base top sites" in html
     for site_id in sites["site_id"]:
         assert site_id in html

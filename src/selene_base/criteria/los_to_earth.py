@@ -1,6 +1,6 @@
 """Earth line-of-sight criterion — rewards direct radio comms windows.
 
-NASA's actual Artemis III selection cares deeply about whether a site
+NASA's actual Artemis IV (formerly Artemis III) selection cares deeply about whether a site
 can maintain direct radio contact with Earth without relying on a relay
 satellite, for at least part of every operational period. The south
 polar candidate regions cluster in the Earth-facing hemisphere

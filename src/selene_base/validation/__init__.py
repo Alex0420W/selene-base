@@ -1,4 +1,4 @@
-"""Validation against NASA's Artemis III candidate landing regions.
+"""Validation against NASA's Artemis IV (formerly Artemis III) candidate landing regions.
 
 Two modules:
 

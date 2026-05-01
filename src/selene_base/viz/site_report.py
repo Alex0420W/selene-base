@@ -3,7 +3,7 @@
 For each top-N site we generate a self-contained HTML page with the
 site's lat/lon, total score, per-criterion bar chart (embedded base64
 PNG), a 50 km × 50 km mini-map cropped from the aggregate score COG,
-the nearest NASA Artemis III region with distance, and the dominant
+the nearest NASA Artemis IV (formerly Artemis III) region with distance, and the dominant
 criterion. Plus a top-level ``index.html`` linking every report so the
 ``data/outputs/sites/`` directory is browsable in any browser, offline.
 """
@@ -158,7 +158,7 @@ def generate_site_report(
     dominant = _dominant_criteria(site_row, top_n=3)
 
     nearest_html = (
-        f"<p>Nearest NASA Artemis III region: <b>{nearest[0]}</b> ({nearest[1]:.1f} km away)</p>"
+        f"<p>Nearest NASA Artemis IV region: <b>{nearest[0]}</b> ({nearest[1]:.1f} km away)</p>"
         if nearest is not None
         else ""
     )
