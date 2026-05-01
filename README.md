@@ -1,6 +1,6 @@
 # selene-base
 
-> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis IV (formerly Artemis III) candidate region polygons (DOI 10.5066/P1MEQ6UK). v1.5 produces 69 HLS-compliant candidate landing sites across 8 of NASA's 9 Artemis IV candidate regions at 20 m resolution (Wueller-class), of which **56 (81.2 %) agree within 5 km of a peer-reviewed Wueller et al. 2026 site (JGR Planets, 130 sites); median match distance 1.76 km** — quantitative agreement with peer-reviewed published methodology, computed against the authors' Zenodo data deposit (CC-BY 4.0). v1.5 ships GPU-accelerated horizon-profile derivation (CuPy on Blackwell) enabling per-region high-resolution analysis. The release history below documents the engineering arc across nine versioned releases.
+> Multi-criteria habitat suitability for the lunar south pole, validated against authoritative USGS-published Artemis IV (formerly Artemis III) candidate region polygons (DOI 10.5066/P1MEQ6UK). v1.5 produces 69 HLS-compliant candidate landing sites across 8 of NASA's 9 Artemis IV candidate regions at 20 m resolution (Wueller-class); v1.8 activates the eighth (seismic) criterion on the same 69-site catalog, of which **56 (81.2 %) agree within 5 km of a peer-reviewed Wueller et al. 2026 site (JGR Planets, 130 sites); median match distance 1.69 km** — quantitative agreement with peer-reviewed published methodology, computed against the authors' Zenodo data deposit (CC-BY 4.0). v1.5 ships GPU-accelerated horizon-profile derivation (CuPy on Blackwell) enabling per-region high-resolution analysis; v1.7 adds TOPSIS as an opt-in alternative aggregator; v1.8 lights up the eighth (seismic) criterion on a bundled south-polar scarp catalog. The release history below documents the engineering arc across eleven versioned releases.
 
 [![CI](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml/badge.svg)](https://github.com/Alex0420W/selene-base/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,7 +11,7 @@ NASA's Artemis IV mission will land humans near the lunar south pole in early 20
 
 ## Headline finding
 
-> **56 of 69 selene-base candidate landing sites (81.2 %) match within 5 km of a peer-reviewed Wueller et al. 2026 site, with median match distance 1.76 km.** The 69 sites are the per-region HLS-compliant landing catalog at 20 m resolution: candidates across 8 of NASA's 9 Artemis IV candidate regions, all guaranteed inside their published USGS polygon and satisfying NASA's published HLS hard-constraint filters (slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 %) by construction. The sole region with zero compliant cells is **Malapert Massif** — a real terrain-driven finding that persists at 20 m, confirming the v1.4.2 result was not a 240 m sampling artefact (no cell inside the Malapert polygon simultaneously satisfies all four HLS thresholds at either resolution). The best-scoring region is **Mons Mouton Plateau** at score 0.732 with the largest HLS-eligible area (171.95 km², 3.86 % of polygon); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.01 % of polygon cells pass the HLS filters at 20 m and only 2 sites fit at the 2 km NMS separation — also unchanged from 240 m, confirming the dGR2 disagreement with Wueller's catalog is genuine terrain divergence rather than a resolution artefact.
+> **56 of 69 selene-base candidate landing sites (81.2 %) match within 5 km of a peer-reviewed Wueller et al. 2026 site, with median match distance 1.69 km (v1.8, all eight criteria active; tightens from 1.76 km at v1.5).** The 69 sites are the per-region HLS-compliant landing catalog at 20 m resolution: candidates across 8 of NASA's 9 Artemis IV candidate regions, all guaranteed inside their published USGS polygon and satisfying NASA's published HLS hard-constraint filters (slope ≤ 8°, 100 m buffer to steeper terrain, illumination ≥ 33 %, and DTE visibility ≥ 50 %) by construction. The sole region with zero compliant cells is **Malapert Massif** — a real terrain-driven finding that persists at 20 m, confirming the v1.4.2 result was not a 240 m sampling artefact (no cell inside the Malapert polygon simultaneously satisfies all four HLS thresholds at either resolution). The best-scoring region is **Mons Mouton Plateau** at score 0.732 with the largest HLS-eligible area (171.95 km², 3.86 % of polygon); the most constrained region with sites is **de Gerlache Rim 2**, where only 0.01 % of polygon cells pass the HLS filters at 20 m and only 2 sites fit at the 2 km NMS separation — also unchanged from 240 m, confirming the dGR2 disagreement with Wueller's catalog is genuine terrain divergence rather than a resolution artefact.
 
 [![selene-base v1.5 (20 m, per-region tiled): 69 candidate sites, 81.2 % within 5 km of Wueller 2026 (median 1.76 km), with USGS polygon outlines and matched-pair connectors](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller_20m.png)](https://raw.githubusercontent.com/Alex0420W/selene-base/main/docs/img/selene_vs_wueller_20m.png)
 
@@ -75,7 +75,7 @@ data/raw/<dataset>/        --load-->  xr.DataArray (native CRS)
                               |
 data/processed/<name>_southpole_240m.tif        (cached COG)
                               |
-                              v criterion.compute(...)            [seven criteria]
+                              v criterion.compute(...)            [eight criteria]
                               |
 data/processed/scored/<name>_score_southpole_240m.tif
                               |
@@ -129,7 +129,9 @@ selene download robbins         # ~92 MB
 selene download lola            # ~115 MB
 selene download illumination    # ~82 MB
 selene download diviner         # ~605 MB Diviner Polar Resource Product (PRP)
-# selene download lend / scarps remain TODO-flagged
+# selene download lend remains TODO-flagged (no verified URL); the seismic-
+# criterion scarp catalog (Mishra & Kumar 2022) ships bundled in-repo as of
+# v1.8 — no separate download step needed.
 selene preprocess && selene score && selene rank-per-region
 ```
 
@@ -137,7 +139,7 @@ selene preprocess && selene score && selene rank-per-region
 
 ## Methodology
 
-Every criterion produces a `[0, 1]` score grid where 1 is "best" and 0 is "unusable", aligned to the common 240 m south-polar stereographic grid (`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`, ±304 km, defined in [`config/region_southpole.yaml`](config/region_southpole.yaml)). Three normalisation primitives in [`scoring/normalize.py`](src/selene_base/scoring/normalize.py) — `min_max`, `optimal_range` (Gaussian), `inverse_threshold` — cover every criterion. The aggregate is a weighted linear sum that **renormalises across whichever criteria are present at score-time**, so a partial pipeline (today: slope, illumination, hazard, thermal, ice, coupling, los_to_earth) produces a comparable score to a complete one — only the absolute meaning of "0.97" shifts.
+Every criterion produces a `[0, 1]` score grid where 1 is "best" and 0 is "unusable", aligned to the common 240 m south-polar stereographic grid (`+proj=stere +lat_0=-90 +lat_ts=-90 +R=1737400`, ±304 km, defined in [`config/region_southpole.yaml`](config/region_southpole.yaml)). Three normalisation primitives in [`scoring/normalize.py`](src/selene_base/scoring/normalize.py) — `min_max`, `optimal_range` (Gaussian), `inverse_threshold` — cover every criterion. The aggregate is a weighted linear sum that **renormalises across whichever criteria are present at score-time**, so a partial pipeline produces a comparable score to a complete one — only the absolute meaning of "0.97" shifts. As of v1.8 the methodology is fully realised: all eight criteria (slope, illumination, hazard, thermal, ice, coupling, los_to_earth, seismic) contribute to the aggregate score by default.
 
 | Criterion | Score function | Source dataset | Resolution | Resampling | Default knobs |
 | --- | --- | --- | --- | --- | --- |
@@ -148,7 +150,7 @@ Every criterion produces a `[0, 1]` score grid where 1 is "best" and 0 is "unusa
 | **Hazard** | $s = \mathrm{clip}(1-d/d_{\mathrm{sat}},\,0,\,1)$ | Robbins 2019 catalog | vector -> 240 m density | KDTree, 3 km radius | $d_{\mathrm{sat}}=50$ |
 | **Coupling** | $s = \max(0,\,1-d_{\text{PSR}}/d_c) \cdot \max(0,\,1-d_{\text{ridge}}/d_c)$ | derived: illumination + slope | 240 m | distance transform | $d_c = 5\,$km |
 | **LOS-to-Earth** | linear ramp on per-pixel Earth visibility fraction over libration | derived: LOLA elevation (horizon profile) | 240 m | bilinear ray sampling | $\text{vis}_{\min}=0.20,\,\text{vis}_{\text{target}}=0.50$ |
-| **Seismic** | $s = \mathrm{clip}(\delta/\delta_{\mathrm{safe}},\,0,\,1)$ | Watters scarp catalog (TODO) | vector -> 240 m distance | KDTree, 1 km densified vertices | $\delta_{\mathrm{safe}}=50\,$km |
+| **Seismic** (v1.8) | $s = 1/(1+\exp(-(d-d_0)/k))$ on distance to nearest scarp | Mishra & Kumar 2022 (bundled, primary) + Watters 2015 polar (bundled, attribution anchor) | vector -> 240 m distance | KDTree, 1 km densified vertices | $d_0 = 25\,$km, $k = 8\,$km |
 
 Slope is computed at the 240 m target resolution from the already-downsampled LOLA DEM via `numpy.gradient` with explicit metric spacing (Zevenbergen & Thorne 1987 convention; ~5 % off Horn 1981 on smooth surfaces). Computing slope on the high-res 80 m DEM and then averaging slope-degrees double-smooths and biases low; computing on the target-resolution DEM keeps everything self-consistent.
 
@@ -434,11 +436,13 @@ The disk-based table is preserved for continuity with the v1.0.0 / v1.1.0 histor
 
 The disk-based "Cabeus B" entry shows a top site within 12.3 km of the disk edge — but the corresponding USGS polygon ("Peak Near Cabeus B", at a different geographic location) is 67.3 km from the same `site_18`, because the legacy disk centroid sits ~150 km north-east of where USGS places the actual region. Two of the disk-table closest distances (Cabeus B and de Gerlache Rim 2) are misleading once measured against the right geometry.
 
-## Quantitative comparison against Wueller et al. 2026 (v1.4.2 — quantitative comparison)
+## Quantitative comparison against Wueller et al. 2026
 
-[Wueller, F., et al. (2026)](https://doi.org/10.1029/2025JE009434) published in *Journal of Geophysical Research: Planets* a peer-reviewed analysis identifying **130 candidate Artemis III landing sites** within NASA's candidate regions using essentially the same outer methodology selene-base implements: NASA HLS hard filters (slope < 8°, ≥ 100 m buffer to steeper terrain) followed by within-region selection. v1.4.2 ships the **quantitative comparison** against the authors' Zenodo data deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0, 130-site shapefile bundled in-repo).
+[Wueller, F., et al. (2026)](https://doi.org/10.1029/2025JE009434) published in *Journal of Geophysical Research: Planets* a peer-reviewed analysis identifying **130 candidate Artemis III landing sites** within NASA's candidate regions using essentially the same outer methodology selene-base implements: NASA HLS hard filters (slope < 8°, ≥ 100 m buffer to steeper terrain) followed by within-region selection. v1.4.2 ships the **quantitative comparison** against the authors' Zenodo data deposit ([doi:10.5281/zenodo.17084058](https://doi.org/10.5281/zenodo.17084058), CC-BY 4.0, 130-site shapefile bundled in-repo); v1.5 reruns the pipeline at 20 m and v1.8 activates the eighth criterion on the same catalog.
 
-### Headline (default weights, default HLS thresholds, threshold = 5 km, in-scope only)
+> **Current headline (v1.8, eight criteria active, 20 m per-region tiled):** 56 / 69 selene sites (81.2 %) match within 5 km of an in-scope Wueller site; 46 / 73 (63.0 %) Wueller-side; **median matched-pair distance 1.69 km**. Tracked through the per-release subsections below: v1.4.2 baseline (240 m, seven criteria) → v1.5 (20 m, seven criteria) → v1.8 (20 m, eight criteria).
+
+### Headline at v1.4.2 (240 m baseline, seven criteria, default weights, threshold = 5 km, in-scope only)
 
 | metric | value |
 | --- | ---: |
@@ -613,14 +617,18 @@ The `|t|` column is a Welch two-sample t-statistic, informational only.
 selene-base/
 ├── src/selene_base/
 │   ├── data/                # download + load + reproject + rasterize
-│   ├── criteria/            # seven [0,1] scoring functions
+│   ├── criteria/            # eight [0,1] scoring functions (slope, illumination,
+│   │                        #                                 hazard, thermal, ice,
+│   │                        #                                 coupling, los_to_earth,
+│   │                        #                                 seismic — v1.8)
 │   ├── scoring/             # normalize, aggregate (renormalising), ranking (NMS, per-region)
 │   ├── validation/          # NASA candidate regions + proximity_analysis + Wueller comparison
 │   ├── viz/                 # folium webmap + per-site HTML reports
 │   ├── pipeline/            # one orchestrator module per CLI subcommand
 │   └── cli.py               # typer CLI: download, preprocess, score, rank, rank-per-region,
-│                            #            validate, validate-per-region, viz, compare,
-│                            #            sensitivity, coupling-sweep, compare-wueller
+│                            #            score-wueller-sites, validate, validate-per-region,
+│                            #            viz, compare, sensitivity, coupling-sweep,
+│                            #            compare-wueller
 ├── config/                  # region_southpole.yaml, weights_default.yaml
 ├── data/                    # raw/ processed/ outputs/ (all gitignored)
 ├── notebooks/               # jupytext .py scripts; one per week
@@ -630,7 +638,7 @@ selene-base/
 
 The dependency graph is one-way: `data/` is the foundation; `criteria/` reads loaded rasters; `scoring/` aggregates criterion outputs; `validation/` and `viz/` consume scoring outputs; `pipeline/` orchestrates; `cli.py` exposes the orchestrators. Tests follow the same layering.
 
-**350 tests collected** (346 passed, 4 skipped: 4 LEND-data-not-present), ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank-per-region -> validate-per-region -> compare`, and asserts every output file is on disk and schema-valid.
+**381 tests collected** (372 passed, 9 skipped: LEND + Robbins data not present), ~80 % combined branch coverage, all running synthetically in CI on Python 3.11 and 3.12. Real-data tests are guarded with `pytest.mark.skipif(not Path(...).exists())` so the suite stays green without ~900 MB of cached LRO data. CI runs a separate `pipeline-smoke` job on push to `main` that downloads the bundled ~12 MB sample tarball, runs `preprocess -> score -> rank-per-region -> validate-per-region -> compare`, and asserts every output file is on disk and schema-valid.
 
 ## Roadmap
 
@@ -658,13 +666,12 @@ The dependency graph is one-way: `data/` is the foundation; `criteria/` reads lo
 
 ### Where this goes next
 
-**TOPSIS aggregator behind `--method topsis`.** Still open as a methodological alternative to weighted-sum aggregation. Lower priority now that the per-region framing produces a NASA-aligned catalog under the existing aggregator; TOPSIS would change *which* HLS-compliant cells rank highest within each polygon, not whether they're inside.
+**Wueller 2026 deposit — non-point layers.** The Zenodo deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), 2 km exploration-area polygons (`ExplorationArea_2km.*`), and an illumination-modelling layer set. None are bundled through v1.8 (point catalog only); folding any of them in (e.g. comparing selene's HLS-eligible mask against Wueller's 8°-buffer raster) is a near-term candidate.
 
-**Wueller 2026 deposit — non-point layers (v1.5+).** The Zenodo deposit also contains an 884 MB HLS slope raster (`HLS_LandingAreas_8°_-100m_buffer.tif`), 2 km exploration-area polygons (`ExplorationArea_2km.*`), and an illumination-modelling layer set. None are bundled through v1.4.2 (point catalog only); folding any of them in (e.g. comparing selene's HLS-eligible mask against Wueller's 8°-buffer raster) is a v1.5+ candidate.
+**v1.8 sensitivity rerun.** The 200-sample Latin-hypercube weight sweep in [`Robustness`](#robustness) was last run under the v1.5 seven-criterion vector. Re-running it on the v1.8 eight-criterion simplex (with seismic at 0.10) is a straightforward follow-up that would also refresh the diagnostic-comparison per-criterion table.
 
 ### Smaller follow-ups
 
-- Resolve the last TODO URL — the Watters lobate-scarp catalog — and light up the seismic criterion (seven of seven live).
 - Auto-tune `--min-score` in the rank pipeline based on the aggregate's percentile distribution.
 - ML-based criterion inputs (planned as a separate project, `selene-vision`).
 
