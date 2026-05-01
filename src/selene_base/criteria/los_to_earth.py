@@ -73,6 +73,7 @@ def derive_horizon_profile(
     pixel_size_m: float = 240.0,
     moon_radius_m: float = DEFAULT_MOON_RADIUS_M,
     n_distance_samples: int = 50,
+    use_gpu: bool = False,
 ) -> xr.DataArray:
     """For each pixel, compute the maximum horizon elevation angle in
     ``n_azimuths`` grid-azimuth directions.
@@ -130,6 +131,11 @@ def derive_horizon_profile(
             sample each ray. 50 is enough that the sampled max is
             within a few hundredths of a degree of the continuous max
             for typical polar relief.
+        use_gpu: If ``True``, run the inner ray-march on the GPU via
+            CuPy + ``cupyx.scipy.ndimage.map_coordinates``. The output
+            DataArray remains numpy-backed for downstream compatibility.
+            Numerically equivalent to the CPU path within float32 ULP;
+            see ``tests/test_los_to_earth_gpu.py`` for the tolerance.
 
     Returns:
         DataArray with dims ``(azimuth, y, x)`` and values in degrees.
@@ -152,51 +158,73 @@ def derive_horizon_profile(
     if elevation.ndim != 2:
         raise ValueError(f"elevation must be 2D (y, x), got dims {elevation.dims!r}")
 
-    arr = elevation.to_numpy().astype(np.float32)
+    if use_gpu:
+        try:
+            import cupy as xp
+            from cupyx.scipy.ndimage import map_coordinates as _map_coords
+        except ImportError as exc:
+            raise RuntimeError(
+                "use_gpu=True but cupy is not installed; "
+                "`pip install cupy-cuda13x` (or cupy-cuda12x) on a CUDA host."
+            ) from exc
+    else:
+        xp = np
+        _map_coords = map_coordinates
+
+    arr = xp.asarray(elevation.to_numpy(), dtype=xp.float32)
     height, width = arr.shape
 
+    # distances_m only feeds python scalars into the loop body; keep on host
+    # to avoid a device->host sync per (azimuth, distance) iteration.
     distances_m = np.geomspace(
         pixel_size_m, max_horizon_km * 1000.0, n_distance_samples, dtype=np.float32
     )
 
-    horizon_deg = np.full((n_azimuths, height, width), -90.0, dtype=np.float32)
+    horizon_deg = xp.full((n_azimuths, height, width), -90.0, dtype=xp.float32)
 
-    row_idx = np.arange(height, dtype=np.float32)[:, None]
-    col_idx = np.arange(width, dtype=np.float32)[None, :]
+    row_idx = xp.arange(height, dtype=xp.float32)[:, None]
+    col_idx = xp.arange(width, dtype=xp.float32)[None, :]
 
     for k in range(n_azimuths):
         az_rad = 2.0 * np.pi * k / n_azimuths
         # Step direction in (col, row) per metre. +y_grid points to
         # smaller row indices in a standard COG (positive y resolution
         # ascending), so row_dir flips sign of cos(az).
-        col_dir = np.sin(az_rad)
-        row_dir = -np.cos(az_rad)
+        col_dir = float(np.sin(az_rad))
+        row_dir = float(-np.cos(az_rad))
 
         horizon_az = horizon_deg[k]
         for d_m in distances_m:
             d_pix = float(d_m) / pixel_size_m
             sample_row = row_idx + row_dir * d_pix
             sample_col = col_idx + col_dir * d_pix
-            ele_at_d = map_coordinates(
+            ele_at_d = _map_coords(
                 arr,
-                np.stack(
+                xp.stack(
                     [
-                        np.broadcast_to(sample_row, (height, width)),
-                        np.broadcast_to(sample_col, (height, width)),
+                        xp.broadcast_to(sample_row, (height, width)),
+                        xp.broadcast_to(sample_col, (height, width)),
                     ]
                 ),
                 order=1,
                 mode="constant",
+                # cupyx.scipy.ndimage.map_coordinates JIT only accepts
+                # ``np.nan`` (the module-level singleton) for cval=NaN; passing
+                # a plain ``float('nan')`` or ``np.float32('nan')`` triggers a
+                # codegen bug ("invalid type conversion: out = (Y)nan").
+                # Equivalent on CPU; required on GPU. cupy 14.0.1 / CUDA 13.
                 cval=np.nan,
             )
             curvature_drop = float(d_m) * float(d_m) / (2.0 * moon_radius_m)
             apparent_height = ele_at_d - arr - curvature_drop
-            angle_deg = np.degrees(np.arctan2(apparent_height, float(d_m)))
-            np.fmax(horizon_az, angle_deg, out=horizon_az)
+            angle_deg = xp.degrees(xp.arctan2(apparent_height, float(d_m)))
+            xp.fmax(horizon_az, angle_deg, out=horizon_az)
+
+    horizon_np = horizon_deg.get() if use_gpu else horizon_deg
 
     azimuth_deg = np.degrees(2.0 * np.pi * np.arange(n_azimuths) / n_azimuths)
     out = xr.DataArray(
-        horizon_deg,
+        horizon_np,
         dims=("azimuth", *elevation.dims),
         coords={
             "azimuth": azimuth_deg,
@@ -218,6 +246,7 @@ def compute_earth_visibility_fraction(
     earth_max_libration_lat_deg: float = EARTH_MAX_LIBRATION_LAT_DEG,
     earth_max_libration_lon_deg: float = EARTH_MAX_LIBRATION_LON_DEG,
     n_libration_samples: int = DEFAULT_N_LIBRATION_SAMPLES,
+    use_gpu: bool = False,
 ) -> xr.DataArray:
     """For each pixel, compute the fraction of the libration cycle
     during which Earth is above the local horizon.
@@ -255,6 +284,11 @@ def compute_earth_visibility_fraction(
         earth_max_libration_lon_deg: Longitude semi-axis, default 7.9°.
         n_libration_samples: Number of parametric points on the
             libration ellipse, default 24.
+        use_gpu: If ``True``, run the libration sweep on the GPU via
+            CuPy. Output is converted back to NumPy for downstream
+            compatibility. Numerically equivalent to the CPU path
+            within float64 ULP. Falls back to NumPy on hosts without
+            CuPy.
 
     Returns:
         2D DataArray ``(y, x)`` of visibility fractions in ``[0, 1]``.
@@ -267,26 +301,40 @@ def compute_earth_visibility_fraction(
             f"({earth_max_libration_lat_deg!r}, {earth_max_libration_lon_deg!r})"
         )
 
-    horizon = horizon_profile.to_numpy().astype(np.float32)
+    if use_gpu:
+        try:
+            import cupy as xp
+        except ImportError as exc:
+            raise RuntimeError(
+                "use_gpu=True but cupy is not installed; "
+                "`pip install cupy-cuda13x` (or cupy-cuda12x) on a CUDA host."
+            ) from exc
+    else:
+        xp = np
+
+    horizon = xp.asarray(horizon_profile.to_numpy(), dtype=xp.float32)
     n_az = horizon.shape[0]
     if horizon.ndim != 3:
         raise ValueError(f"horizon_profile must be 3D (azimuth, y, x), got {horizon.shape!r}")
 
-    lat_rad = np.deg2rad(pixel_lat_deg.to_numpy().astype(np.float64))
-    lon_rad = np.deg2rad(pixel_lon_deg.to_numpy().astype(np.float64))
-    gamma_rad = grid_convergence_rad.to_numpy().astype(np.float64)
+    lat_rad = xp.deg2rad(xp.asarray(pixel_lat_deg.to_numpy(), dtype=xp.float64))
+    lon_rad = xp.deg2rad(xp.asarray(pixel_lon_deg.to_numpy(), dtype=xp.float64))
+    gamma_rad = xp.asarray(grid_convergence_rad.to_numpy(), dtype=xp.float64)
     if not (lat_rad.shape == lon_rad.shape == gamma_rad.shape == horizon.shape[1:]):
         raise ValueError(
             f"shape mismatch: lat={lat_rad.shape!r} lon={lon_rad.shape!r} "
             f"gamma={gamma_rad.shape!r} horizon-yx={horizon.shape[1:]!r}"
         )
 
-    cos_lat = np.cos(lat_rad)
-    sin_lat = np.sin(lat_rad)
+    cos_lat = xp.cos(lat_rad)
+    sin_lat = xp.sin(lat_rad)
 
     height, width = lat_rad.shape
-    visibility_count = np.zeros((height, width), dtype=np.int32)
+    visibility_count = xp.zeros((height, width), dtype=xp.int32)
 
+    # Libration parametric coordinates kept on host — they are length-24
+    # 1-D vectors that feed scalars into the loop body, so a device
+    # round-trip per iteration is wasted bandwidth.
     theta = 2.0 * np.pi * np.arange(n_libration_samples) / n_libration_samples
     libration_lat_rad = np.deg2rad(earth_max_libration_lat_deg) * np.sin(theta)
     libration_lon_rad = np.deg2rad(earth_max_libration_lon_deg) * np.cos(theta)
@@ -294,31 +342,32 @@ def compute_earth_visibility_fraction(
     az_step_rad = 2.0 * np.pi / n_az
 
     for phi_e, lambda_e in zip(libration_lat_rad, libration_lon_rad, strict=True):
-        cos_phi_e = np.cos(phi_e)
-        sin_phi_e = np.sin(phi_e)
-        cos_lon_diff = np.cos(lon_rad - lambda_e)
-        sin_lon_diff = np.sin(lon_rad - lambda_e)
+        cos_phi_e = float(np.cos(phi_e))
+        sin_phi_e = float(np.sin(phi_e))
+        cos_lon_diff = xp.cos(lon_rad - float(lambda_e))
+        sin_lon_diff = xp.sin(lon_rad - float(lambda_e))
 
         # Earth elevation: arcsin(e · u) where u is local up.
         e_dot_u = cos_lat * cos_phi_e * cos_lon_diff + sin_lat * sin_phi_e
-        earth_elev_deg = np.degrees(np.arcsin(np.clip(e_dot_u, -1.0, 1.0)))
+        earth_elev_deg = xp.degrees(xp.arcsin(xp.clip(e_dot_u, -1.0, 1.0)))
 
         # Earth's *geographic* azimuth at the pixel: project Earth's 3D
         # direction onto the local north/east basis and atan2.
         earth_n = -sin_lat * cos_phi_e * cos_lon_diff + cos_lat * sin_phi_e
         earth_e = -cos_phi_e * sin_lon_diff
-        earth_geo_az_rad = np.arctan2(earth_e, earth_n)
+        earth_geo_az_rad = xp.arctan2(earth_e, earth_n)
 
         # Convert to grid azimuth via the pixel's grid convergence.
         # α_grid = (α_geo - γ) mod 2π, then quantise.
-        earth_grid_az_rad = np.mod(earth_geo_az_rad - gamma_rad, 2.0 * np.pi)
-        k_idx = np.mod(np.round(earth_grid_az_rad / az_step_rad).astype(np.int64), n_az)
+        earth_grid_az_rad = xp.mod(earth_geo_az_rad - gamma_rad, 2.0 * np.pi)
+        k_idx = xp.mod(xp.round(earth_grid_az_rad / az_step_rad).astype(xp.int64), n_az)
 
         # Fancy-index the horizon at each pixel's azimuth bucket.
-        horizon_at_az = np.take_along_axis(horizon, k_idx[None, :, :], axis=0)[0]
-        visibility_count += (earth_elev_deg > horizon_at_az).astype(np.int32)
+        horizon_at_az = xp.take_along_axis(horizon, k_idx[None, :, :], axis=0)[0]
+        visibility_count += (earth_elev_deg > horizon_at_az).astype(xp.int32)
 
-    visibility_fraction = visibility_count.astype(np.float64) / float(n_libration_samples)
+    visibility_fraction_dev = visibility_count.astype(xp.float64) / float(n_libration_samples)
+    visibility_fraction = visibility_fraction_dev.get() if use_gpu else visibility_fraction_dev
 
     out = xr.DataArray(
         visibility_fraction,

@@ -38,8 +38,10 @@ ROBBINS_FILTERED_LAT_MAX = -75.0  # south-polar slice we keep in repo cache
 
 # ----------------------------------------------------------------------------
 # 2. LOLA LDEM south-polar DEM (verified 2026-04 via PDS Geosciences listing).
-#    PDS does not publish a 240 m product; the 80 m IMG is the smallest
-#    available and downsamples cleanly to our 240 m target grid in week 2.
+#    PDS publishes the 80°S+ polar grid at 80 m and 20 m resolutions in the
+#    same archive directory. v1.4 used the 80 m product downsampled to a
+#    240 m analysis grid; v1.5 fetches the 20 m product for the tiled
+#    high-resolution per-region run.
 # ----------------------------------------------------------------------------
 _LOLA_BASE = (
     "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/polar/img"
@@ -48,6 +50,12 @@ LOLA_LDEM_IMG_URL = f"{_LOLA_BASE}/ldem_80s_80m.img"
 LOLA_LDEM_LBL_URL = f"{_LOLA_BASE}/ldem_80s_80m.lbl"
 LOLA_LDEM_IMG_MIN_BYTES = 100_000_000  # ~115 MB
 LOLA_LDEM_LBL_MIN_BYTES = 1_000
+
+LOLA_LDEM_20M_IMG_URL = f"{_LOLA_BASE}/ldem_80s_20m.img"
+LOLA_LDEM_20M_LBL_URL = f"{_LOLA_BASE}/ldem_80s_20m.lbl"
+LOLA_LDEM_20M_IMG_MIN_BYTES = 1_000_000_000  # ~1.85 GB
+
+LOLA_RESOLUTIONS_M: tuple[int, ...] = (80, 20)
 
 # ----------------------------------------------------------------------------
 # 3. Diviner Polar Resource Product — south pole (verified week 6).
@@ -152,27 +160,52 @@ def download_robbins(dest: Path = DEFAULT_RAW_DIR / "robbins") -> Path:
     return filtered_path
 
 
-def download_lola(dest: Path = DEFAULT_RAW_DIR / "lola") -> Path:
-    """Download the LOLA LDEM_80S_80M south-polar DEM (PDS3 IMG + LBL).
+def download_lola(
+    dest: Path = DEFAULT_RAW_DIR / "lola",
+    *,
+    resolution_m: int = 80,
+) -> Path:
+    """Download the LOLA LDEM south-polar DEM (PDS3 IMG + LBL).
+
+    The PDS Geosciences archive publishes the 80°S+ polar grid at both
+    80 m and 20 m. v1.4 ran on the 80 m product downsampled to a 240 m
+    analysis grid; v1.5 uses the 20 m product for the per-region tiled
+    high-resolution run.
 
     Args:
         dest: Directory to write into.
+        resolution_m: Native LOLA grid resolution to fetch. Must be one
+            of :data:`LOLA_RESOLUTIONS_M` (80 or 20). 80 m is the v1.4
+            default; 20 m is the v1.5 product (~1.85 GB).
 
     Returns:
         Path to the downloaded directory.
+
+    Raises:
+        ValueError: If ``resolution_m`` is not supported.
     """
+    if resolution_m not in LOLA_RESOLUTIONS_M:
+        raise ValueError(
+            f"resolution_m={resolution_m!r} not in supported set {LOLA_RESOLUTIONS_M!r}"
+        )
     dest = Path(dest)
+    if resolution_m == 80:
+        img_url, lbl_url = LOLA_LDEM_IMG_URL, LOLA_LDEM_LBL_URL
+        img_min, lbl_min = LOLA_LDEM_IMG_MIN_BYTES, LOLA_LDEM_LBL_MIN_BYTES
+    else:  # 20 m
+        img_url, lbl_url = LOLA_LDEM_20M_IMG_URL, LOLA_LDEM_20M_LBL_URL
+        img_min, lbl_min = LOLA_LDEM_20M_IMG_MIN_BYTES, LOLA_LDEM_LBL_MIN_BYTES
     stream_to_file(
-        LOLA_LDEM_IMG_URL,
-        dest / "ldem_80s_80m.img",
-        min_bytes=LOLA_LDEM_IMG_MIN_BYTES,
-        label="lola img",
+        img_url,
+        dest / f"ldem_80s_{resolution_m}m.img",
+        min_bytes=img_min,
+        label=f"lola img ({resolution_m} m)",
     )
     stream_to_file(
-        LOLA_LDEM_LBL_URL,
-        dest / "ldem_80s_80m.lbl",
-        min_bytes=LOLA_LDEM_LBL_MIN_BYTES,
-        label="lola lbl",
+        lbl_url,
+        dest / f"ldem_80s_{resolution_m}m.lbl",
+        min_bytes=lbl_min,
+        label=f"lola lbl ({resolution_m} m)",
     )
     return dest
 
