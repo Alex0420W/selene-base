@@ -23,6 +23,7 @@ from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import rank_per_region as _rank_per_region
 from selene_base.pipeline import rank_per_region_tiled as _rank_per_region_tiled
 from selene_base.pipeline import score as _score
+from selene_base.pipeline import score_wueller_sites as _score_wueller_sites
 from selene_base.pipeline import sensitivity as _sensitivity
 from selene_base.pipeline import validate as _validate
 from selene_base.pipeline import validate_per_region as _validate_per_region
@@ -414,6 +415,57 @@ def rank_per_region(
         outputs_dir=outputs_dir,
         n_per_region=n_per_region,
         min_distance_km=min_distance_km,
+    )
+
+
+@app.command(name="score-wueller-sites")
+def score_wueller_sites(
+    processed_dir: Path = typer.Option(
+        Path("data/processed"),
+        "--processed-dir",
+        help="Directory holding the 240 m raw + scored COGs.",
+        file_okay=False,
+    ),
+    outputs_dir: Path = typer.Option(
+        Path("data/outputs"),
+        "--outputs-dir",
+        help=(
+            "Directory holding score_southpole.tif and where the "
+            "v1.5_catalog_wueller_evaluation.csv + "
+            "wueller_sites_scored_by_selene.json deliverables are written."
+        ),
+        file_okay=False,
+    ),
+    in_scope_only: bool = typer.Option(
+        True,
+        "--in-scope-only/--no-in-scope-only",
+        help=(
+            "When on (default), evaluate only the 73 Wueller sites whose "
+            "region is in NASA's October 2024 down-selected nine. Off "
+            "evaluates all 130 Wueller sites."
+        ),
+    ),
+) -> None:
+    """Score Wueller 2026 sites against selene's per-criterion rasters.
+
+    Companion to ``selene compare-wueller``. The latter answers "are the
+    two catalogs picking the same cells?" via spatial nearest-neighbour
+    matching; this subcommand answers "do the two catalogs agree on
+    what makes a *good* cell?" by sampling selene's six active 240 m
+    criterion rasters plus the aggregate score at every Wueller-site
+    coordinate.
+
+    Per v1.5's design, per-criterion rasters are not materialised
+    globally at 20 m. The 240 m criterion stack is what drives selene's
+    aggregate score (which v1.5 upsamples bilinearly onto each
+    per-region 20 m tile); the methodology converges between
+    resolutions (median matched-pair distance 1.88 km at 240 m → 1.76
+    km at 20 m), so 240 m criterion evaluation is representative.
+    """
+    _score_wueller_sites.run(
+        processed_dir=processed_dir,
+        outputs_dir=outputs_dir,
+        in_scope_only=in_scope_only,
     )
 
 

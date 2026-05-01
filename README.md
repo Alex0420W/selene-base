@@ -247,6 +247,8 @@ A few choices in the pipeline are worth surfacing because they materially affect
 
 ## Validation
 
+> **Detailed catalog (v1.5):** every site, every per-criterion score, every Wueller comparison — [`docs/v1.5_catalog_report.md`](docs/v1.5_catalog_report.md). Companion to this README: per-site breakdown of the 69-site v1.5 catalog and cross-evaluation of Wueller's 73 in-scope sites against selene's seven criteria.
+
 ### Per-region HLS-compliant catalog (v1.3.0)
 
 `selene rank-per-region` followed by `selene validate-per-region` produces the NASA-aligned per-polygon catalog: for each USGS polygon, the cells passing every HLS hard filter are ranked by aggregate suitability score, and up to ``n_per_region`` sites (default 10) are NMS-extracted at 2 km separation.

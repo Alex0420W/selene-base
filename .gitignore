@@ -78,6 +78,13 @@ data/sample/
 !data/processed/.gitkeep
 !data/outputs/.gitkeep
 
+# Whitelisted v1.5 catalog report deliverables — these are deliberately
+# tracked so the report at docs/v1.5_catalog_report.md is reproducible
+# without re-running selene score-wueller-sites + the report notebook.
+!data/outputs/v1.5_catalog_main_table.csv
+!data/outputs/v1.5_catalog_wueller_evaluation.csv
+!data/outputs/wueller_sites_scored_by_selene.json
+
 # Generated artifacts
 *.tif.aux.xml
 *.log
