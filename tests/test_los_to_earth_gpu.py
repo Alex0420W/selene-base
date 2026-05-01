@@ -17,7 +17,10 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from selene_base.criteria.los_to_earth import derive_horizon_profile
+from selene_base.criteria.los_to_earth import (
+    compute_earth_visibility_fraction,
+    derive_horizon_profile,
+)
 
 cupy_unavailable = False
 try:
@@ -69,3 +72,53 @@ def test_gpu_horizon_profile_is_deterministic() -> None:
     assert np.array_equal(np.isnan(a), np.isnan(b))
     finite = np.isfinite(a) & np.isfinite(b)
     assert (a[finite] == b[finite]).all()
+
+
+def _synthetic_visibility_inputs() -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray]:
+    """Build a small horizon profile + lat/lon/gamma grid for the GPU equivalence test.
+
+    The synthetic horizon has structure (some azimuths blocked, some
+    open) so the libration sweep produces non-degenerate visibility
+    fractions to compare on.
+    """
+    n_az, h, w = 36, 32, 32
+    rng = np.random.default_rng(20260430)
+    horizon_arr = (
+        np.degrees(rng.normal(0.0, 0.05, size=(n_az, h, w)))
+        - np.linspace(0.0, 1.5, n_az)[:, None, None]
+    ).astype(np.float32)
+    horizon = xr.DataArray(
+        horizon_arr,
+        dims=("azimuth", "y", "x"),
+        coords={
+            "azimuth": np.degrees(2.0 * np.pi * np.arange(n_az) / n_az),
+            "y": np.arange(h),
+            "x": np.arange(w),
+        },
+    )
+    # Lat 80° S to 89° S, lon spread around the pole, gamma derived from synthetic projected coords.
+    lat = np.linspace(-80.0, -89.0, h)[:, None] * np.ones(w)
+    lon = np.linspace(0.0, 90.0, w)[None, :] * np.ones(h)[:, None]
+    xs = np.linspace(-200_000.0, 200_000.0, w)
+    ys = np.linspace(200_000.0, -200_000.0, h)
+    xx, yy = np.meshgrid(xs, ys)
+    gamma = np.arctan2(xx, yy)
+    pixel_lat = xr.DataArray(lat, dims=("y", "x"), coords={"y": ys, "x": xs})
+    pixel_lon = xr.DataArray(lon, dims=("y", "x"), coords={"y": ys, "x": xs})
+    grid_conv = xr.DataArray(gamma, dims=("y", "x"), coords={"y": ys, "x": xs})
+    return horizon, pixel_lat, pixel_lon, grid_conv
+
+
+@requires_gpu
+def test_gpu_matches_cpu_visibility_fraction() -> None:
+    horizon, pixel_lat, pixel_lon, gamma = _synthetic_visibility_inputs()
+    cpu = compute_earth_visibility_fraction(horizon, pixel_lat, pixel_lon, gamma).to_numpy()
+    gpu = compute_earth_visibility_fraction(
+        horizon, pixel_lat, pixel_lon, gamma, use_gpu=True
+    ).to_numpy()
+    assert cpu.shape == gpu.shape
+    # Visibility fractions are exact rationals (count / 24); CPU and
+    # GPU paths must agree to bitwise equality on finite cells.
+    finite = np.isfinite(cpu) & np.isfinite(gpu)
+    assert finite.any()
+    assert np.array_equal(cpu[finite], gpu[finite])

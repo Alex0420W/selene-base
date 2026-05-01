@@ -246,6 +246,7 @@ def compute_earth_visibility_fraction(
     earth_max_libration_lat_deg: float = EARTH_MAX_LIBRATION_LAT_DEG,
     earth_max_libration_lon_deg: float = EARTH_MAX_LIBRATION_LON_DEG,
     n_libration_samples: int = DEFAULT_N_LIBRATION_SAMPLES,
+    use_gpu: bool = False,
 ) -> xr.DataArray:
     """For each pixel, compute the fraction of the libration cycle
     during which Earth is above the local horizon.
@@ -283,6 +284,11 @@ def compute_earth_visibility_fraction(
         earth_max_libration_lon_deg: Longitude semi-axis, default 7.9°.
         n_libration_samples: Number of parametric points on the
             libration ellipse, default 24.
+        use_gpu: If ``True``, run the libration sweep on the GPU via
+            CuPy. Output is converted back to NumPy for downstream
+            compatibility. Numerically equivalent to the CPU path
+            within float64 ULP. Falls back to NumPy on hosts without
+            CuPy.
 
     Returns:
         2D DataArray ``(y, x)`` of visibility fractions in ``[0, 1]``.
@@ -295,26 +301,40 @@ def compute_earth_visibility_fraction(
             f"({earth_max_libration_lat_deg!r}, {earth_max_libration_lon_deg!r})"
         )
 
-    horizon = horizon_profile.to_numpy().astype(np.float32)
+    if use_gpu:
+        try:
+            import cupy as xp
+        except ImportError as exc:
+            raise RuntimeError(
+                "use_gpu=True but cupy is not installed; "
+                "`pip install cupy-cuda13x` (or cupy-cuda12x) on a CUDA host."
+            ) from exc
+    else:
+        xp = np
+
+    horizon = xp.asarray(horizon_profile.to_numpy(), dtype=xp.float32)
     n_az = horizon.shape[0]
     if horizon.ndim != 3:
         raise ValueError(f"horizon_profile must be 3D (azimuth, y, x), got {horizon.shape!r}")
 
-    lat_rad = np.deg2rad(pixel_lat_deg.to_numpy().astype(np.float64))
-    lon_rad = np.deg2rad(pixel_lon_deg.to_numpy().astype(np.float64))
-    gamma_rad = grid_convergence_rad.to_numpy().astype(np.float64)
+    lat_rad = xp.deg2rad(xp.asarray(pixel_lat_deg.to_numpy(), dtype=xp.float64))
+    lon_rad = xp.deg2rad(xp.asarray(pixel_lon_deg.to_numpy(), dtype=xp.float64))
+    gamma_rad = xp.asarray(grid_convergence_rad.to_numpy(), dtype=xp.float64)
     if not (lat_rad.shape == lon_rad.shape == gamma_rad.shape == horizon.shape[1:]):
         raise ValueError(
             f"shape mismatch: lat={lat_rad.shape!r} lon={lon_rad.shape!r} "
             f"gamma={gamma_rad.shape!r} horizon-yx={horizon.shape[1:]!r}"
         )
 
-    cos_lat = np.cos(lat_rad)
-    sin_lat = np.sin(lat_rad)
+    cos_lat = xp.cos(lat_rad)
+    sin_lat = xp.sin(lat_rad)
 
     height, width = lat_rad.shape
-    visibility_count = np.zeros((height, width), dtype=np.int32)
+    visibility_count = xp.zeros((height, width), dtype=xp.int32)
 
+    # Libration parametric coordinates kept on host — they are length-24
+    # 1-D vectors that feed scalars into the loop body, so a device
+    # round-trip per iteration is wasted bandwidth.
     theta = 2.0 * np.pi * np.arange(n_libration_samples) / n_libration_samples
     libration_lat_rad = np.deg2rad(earth_max_libration_lat_deg) * np.sin(theta)
     libration_lon_rad = np.deg2rad(earth_max_libration_lon_deg) * np.cos(theta)
@@ -322,31 +342,34 @@ def compute_earth_visibility_fraction(
     az_step_rad = 2.0 * np.pi / n_az
 
     for phi_e, lambda_e in zip(libration_lat_rad, libration_lon_rad, strict=True):
-        cos_phi_e = np.cos(phi_e)
-        sin_phi_e = np.sin(phi_e)
-        cos_lon_diff = np.cos(lon_rad - lambda_e)
-        sin_lon_diff = np.sin(lon_rad - lambda_e)
+        cos_phi_e = float(np.cos(phi_e))
+        sin_phi_e = float(np.sin(phi_e))
+        cos_lon_diff = xp.cos(lon_rad - float(lambda_e))
+        sin_lon_diff = xp.sin(lon_rad - float(lambda_e))
 
         # Earth elevation: arcsin(e · u) where u is local up.
         e_dot_u = cos_lat * cos_phi_e * cos_lon_diff + sin_lat * sin_phi_e
-        earth_elev_deg = np.degrees(np.arcsin(np.clip(e_dot_u, -1.0, 1.0)))
+        earth_elev_deg = xp.degrees(xp.arcsin(xp.clip(e_dot_u, -1.0, 1.0)))
 
         # Earth's *geographic* azimuth at the pixel: project Earth's 3D
         # direction onto the local north/east basis and atan2.
         earth_n = -sin_lat * cos_phi_e * cos_lon_diff + cos_lat * sin_phi_e
         earth_e = -cos_phi_e * sin_lon_diff
-        earth_geo_az_rad = np.arctan2(earth_e, earth_n)
+        earth_geo_az_rad = xp.arctan2(earth_e, earth_n)
 
         # Convert to grid azimuth via the pixel's grid convergence.
         # α_grid = (α_geo - γ) mod 2π, then quantise.
-        earth_grid_az_rad = np.mod(earth_geo_az_rad - gamma_rad, 2.0 * np.pi)
-        k_idx = np.mod(np.round(earth_grid_az_rad / az_step_rad).astype(np.int64), n_az)
+        earth_grid_az_rad = xp.mod(earth_geo_az_rad - gamma_rad, 2.0 * np.pi)
+        k_idx = xp.mod(xp.round(earth_grid_az_rad / az_step_rad).astype(xp.int64), n_az)
 
         # Fancy-index the horizon at each pixel's azimuth bucket.
-        horizon_at_az = np.take_along_axis(horizon, k_idx[None, :, :], axis=0)[0]
-        visibility_count += (earth_elev_deg > horizon_at_az).astype(np.int32)
+        horizon_at_az = xp.take_along_axis(horizon, k_idx[None, :, :], axis=0)[0]
+        visibility_count += (earth_elev_deg > horizon_at_az).astype(xp.int32)
 
-    visibility_fraction = visibility_count.astype(np.float64) / float(n_libration_samples)
+    visibility_fraction_dev = visibility_count.astype(xp.float64) / float(n_libration_samples)
+    visibility_fraction = (
+        visibility_fraction_dev.get() if use_gpu else visibility_fraction_dev
+    )
 
     out = xr.DataArray(
         visibility_fraction,

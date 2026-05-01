@@ -246,9 +246,16 @@ def process_tile(
     # ---- per-tile LOS visibility from the v1.5 horizon NPZ ----
     horizon_tile = _load_horizon_profile_npz(horizon_npz, template, target_crs)
     pixel_lat, pixel_lon, gamma = _compute_lat_lon_gamma(template, target_crs)
-    los_tile = los_to_earth.compute_earth_visibility_fraction(
-        horizon_tile, pixel_lat, pixel_lon, gamma
-    )
+    # Try the GPU path first; fall back silently on hosts without CuPy
+    # (e.g. CI). The visibility sweep is the dominant CPU cost at 20 m.
+    try:
+        los_tile = los_to_earth.compute_earth_visibility_fraction(
+            horizon_tile, pixel_lat, pixel_lon, gamma, use_gpu=True
+        )
+    except RuntimeError:
+        los_tile = los_to_earth.compute_earth_visibility_fraction(
+            horizon_tile, pixel_lat, pixel_lon, gamma
+        )
 
     # ---- 240 m global rasters resampled onto the tile ----
     illum_tile = _resample_global_to_tile_grid(illumination_global, template)
