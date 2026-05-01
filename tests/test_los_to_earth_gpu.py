@@ -31,9 +31,7 @@ try:
 except Exception:  # ImportError, CUDARuntimeError on hosts without a driver
     cupy_unavailable = True
 
-requires_gpu = pytest.mark.skipif(
-    cupy_unavailable, reason="CuPy not installed or no CUDA device"
-)
+requires_gpu = pytest.mark.skipif(cupy_unavailable, reason="CuPy not installed or no CUDA device")
 
 
 def _synthetic_elevation(height: int = 64, width: int = 64) -> xr.DataArray:

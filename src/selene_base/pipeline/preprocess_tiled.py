@@ -389,10 +389,7 @@ def run_tiled_per_region(
         )
         elapsed = time.perf_counter() - t0
         size = out_path.stat().st_size
-        echo(
-            f"[done] {spec.region_code}: {out_path.name} "
-            f"({size:,} bytes, {elapsed:.1f} s)"
-        )
+        echo(f"[done] {spec.region_code}: {out_path.name} ({size:,} bytes, {elapsed:.1f} s)")
         results.append(
             TiledHorizonResult(
                 region_name=spec.region_name,

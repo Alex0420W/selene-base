@@ -197,12 +197,23 @@ for _, row in selene_polar.iterrows():
     )
 
 ax.scatter(
-    [0], [0], s=180, marker="*",
-    facecolor="white", edgecolor="black", linewidth=0.8, zorder=12,
+    [0],
+    [0],
+    s=180,
+    marker="*",
+    facecolor="white",
+    edgecolor="black",
+    linewidth=0.8,
+    zorder=12,
 )
 ax.annotate(
-    "South Pole", xy=(0, 0), xytext=(8, -10),
-    textcoords="offset points", fontsize=8, color="white", zorder=12,
+    "South Pole",
+    xy=(0, 0),
+    xytext=(8, -10),
+    textcoords="offset points",
+    fontsize=8,
+    color="white",
+    zorder=12,
 )
 
 ax.set_xlim(PLOT_XMIN, PLOT_XMAX)
@@ -246,20 +257,48 @@ ax.set_title(
 
 legend = ax.legend(
     handles=[
-        Line2D([0], [0], color="#e63946", linewidth=1.6,
-               label="NASA Artemis III regions (USGS polygons)"),
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="#facc15",
-               markeredgecolor="#78350f", markersize=7, linestyle="None",
-               label=f"Wueller 2026 in-scope sites (n={n_wueller})"),
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="#06d6a0",
-               markeredgecolor="white", markersize=10, linestyle="None",
-               label=f"selene-base matched ({n_matched})"),
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="none",
-               markeredgecolor="#06d6a0", markeredgewidth=1.6, markersize=10,
-               linestyle="None",
-               label=f"selene-base unmatched ({n_total - n_matched})"),
-        Line2D([0], [0], color="#9ca3af", linewidth=0.9,
-               label="matched-pair distance ≤ 5 km"),
+        Line2D(
+            [0],
+            [0],
+            color="#e63946",
+            linewidth=1.6,
+            label="NASA Artemis III regions (USGS polygons)",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            markerfacecolor="#facc15",
+            markeredgecolor="#78350f",
+            markersize=7,
+            linestyle="None",
+            label=f"Wueller 2026 in-scope sites (n={n_wueller})",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            markerfacecolor="#06d6a0",
+            markeredgecolor="white",
+            markersize=10,
+            linestyle="None",
+            label=f"selene-base matched ({n_matched})",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            markerfacecolor="none",
+            markeredgecolor="#06d6a0",
+            markeredgewidth=1.6,
+            markersize=10,
+            linestyle="None",
+            label=f"selene-base unmatched ({n_total - n_matched})",
+        ),
+        Line2D([0], [0], color="#9ca3af", linewidth=0.9, label="matched-pair distance ≤ 5 km"),
     ],
     loc="lower left",
     fontsize=9,
@@ -323,18 +362,29 @@ for ax in (ax_pct, ax_dist):
 x = np.arange(len(regions))
 width = 0.36
 
-ax_pct.bar(x - width / 2, v14_match_pct, width,
-           color="#94a3b8", edgecolor="#1a1a1a", label="v1.4.2 (240 m)")
-ax_pct.bar(x + width / 2, v15_match_pct, width,
-           color="#06d6a0", edgecolor="#1a1a1a", label="v1.5 (20 m)")
+ax_pct.bar(
+    x - width / 2,
+    v14_match_pct,
+    width,
+    color="#94a3b8",
+    edgecolor="#1a1a1a",
+    label="v1.4.2 (240 m)",
+)
+ax_pct.bar(
+    x + width / 2, v15_match_pct, width, color="#06d6a0", edgecolor="#1a1a1a", label="v1.5 (20 m)"
+)
 ax_pct.set_xticks(x)
 ax_pct.set_xticklabels(
-    [r.replace(" ", "\n") for r in regions], fontsize=8.5, color="#d1d5db",
+    [r.replace(" ", "\n") for r in regions],
+    fontsize=8.5,
+    color="#d1d5db",
 )
 ax_pct.set_ylabel("selene matched (%)", color="#d1d5db")
 ax_pct.set_title(
     "Per-region agreement: % of selene sites matched within 5 km of Wueller",
-    color="#ffffff", fontsize=11, pad=10,
+    color="#ffffff",
+    fontsize=11,
+    pad=10,
 )
 ax_pct.set_ylim(0, 105)
 leg = ax_pct.legend(facecolor="#262626", edgecolor="#3a3a3a", labelcolor="white")
@@ -345,18 +395,29 @@ ax_pct.grid(axis="y", color="#3a3a3a", linewidth=0.5, alpha=0.5)
 # Right panel: median matched-pair distance
 v14_dist_plot = [d if d == d else 0.0 for d in v14_med_km]
 v15_dist_plot = [d if d == d else 0.0 for d in v15_med_km]
-ax_dist.bar(x - width / 2, v14_dist_plot, width,
-            color="#94a3b8", edgecolor="#1a1a1a", label="v1.4.2 (240 m)")
-ax_dist.bar(x + width / 2, v15_dist_plot, width,
-            color="#06d6a0", edgecolor="#1a1a1a", label="v1.5 (20 m)")
+ax_dist.bar(
+    x - width / 2,
+    v14_dist_plot,
+    width,
+    color="#94a3b8",
+    edgecolor="#1a1a1a",
+    label="v1.4.2 (240 m)",
+)
+ax_dist.bar(
+    x + width / 2, v15_dist_plot, width, color="#06d6a0", edgecolor="#1a1a1a", label="v1.5 (20 m)"
+)
 ax_dist.set_xticks(x)
 ax_dist.set_xticklabels(
-    [r.replace(" ", "\n") for r in regions], fontsize=8.5, color="#d1d5db",
+    [r.replace(" ", "\n") for r in regions],
+    fontsize=8.5,
+    color="#d1d5db",
 )
 ax_dist.set_ylabel("median matched-pair distance (km)", color="#d1d5db")
 ax_dist.set_title(
     "Per-region median matched-pair distance",
-    color="#ffffff", fontsize=11, pad=10,
+    color="#ffffff",
+    fontsize=11,
+    pad=10,
 )
 leg = ax_dist.legend(facecolor="#262626", edgecolor="#3a3a3a", labelcolor="white")
 for t in leg.get_texts():
@@ -372,7 +433,10 @@ hl = (
 )
 fig.suptitle(
     "Resolution sensitivity: 240 m → 20 m methodology converges",
-    color="#ffffff", fontsize=18, fontweight="bold", y=0.995,
+    color="#ffffff",
+    fontsize=18,
+    fontweight="bold",
+    y=0.995,
 )
 fig.text(0.5, 0.93, hl, ha="center", color="#e5e7eb", fontsize=10)
 fig.tight_layout(rect=(0, 0, 1, 0.91))

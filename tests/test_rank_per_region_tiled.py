@@ -68,12 +68,10 @@ def _build_synthetic_inputs(tmp_path: Path, *, resolution_m: float = 240.0) -> d
     illum.rio.to_raster(illum_path, driver="GTiff", compress="DEFLATE")
 
     # Aggregate score with a smooth peak, so the ranker has a preference order.
-    score_arr = (
-        0.5 + 0.3 * np.exp(-((xx**2 + yy**2) / (2 * 200_000.0**2)))
-    ).astype(np.float32)
-    score = xr.DataArray(
-        score_arr, dims=("y", "x"), coords={"y": ys, "x": xs}
-    ).rio.write_crs(POLAR_CRS, inplace=False)
+    score_arr = (0.5 + 0.3 * np.exp(-((xx**2 + yy**2) / (2 * 200_000.0**2)))).astype(np.float32)
+    score = xr.DataArray(score_arr, dims=("y", "x"), coords={"y": ys, "x": xs}).rio.write_crs(
+        POLAR_CRS, inplace=False
+    )
     score_path = outputs / "score_southpole.tif"
     score.rio.to_raster(score_path, driver="GTiff", compress="DEFLATE")
 

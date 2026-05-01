@@ -367,9 +367,7 @@ def compute_earth_visibility_fraction(
         visibility_count += (earth_elev_deg > horizon_at_az).astype(xp.int32)
 
     visibility_fraction_dev = visibility_count.astype(xp.float64) / float(n_libration_samples)
-    visibility_fraction = (
-        visibility_fraction_dev.get() if use_gpu else visibility_fraction_dev
-    )
+    visibility_fraction = visibility_fraction_dev.get() if use_gpu else visibility_fraction_dev
 
     out = xr.DataArray(
         visibility_fraction,

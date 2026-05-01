@@ -108,12 +108,8 @@ def _open_global_cog(path: Path) -> xr.DataArray:
 def _make_tile_template(tile: TileSpec, resolution_m: float, target_crs: str) -> xr.DataArray:
     """Empty DataArray on the tile grid, used as a reproject_match template."""
     height, width = tile.shape(resolution_m)
-    xs = np.linspace(
-        tile.xmin + resolution_m / 2, tile.xmax - resolution_m / 2, width
-    )
-    ys = np.linspace(
-        tile.ymax - resolution_m / 2, tile.ymin + resolution_m / 2, height
-    )
+    xs = np.linspace(tile.xmin + resolution_m / 2, tile.xmax - resolution_m / 2, width)
+    ys = np.linspace(tile.ymax - resolution_m / 2, tile.ymin + resolution_m / 2, height)
     template = xr.DataArray(
         np.zeros((height, width), dtype=np.float32),
         dims=("y", "x"),
@@ -122,9 +118,7 @@ def _make_tile_template(tile: TileSpec, resolution_m: float, target_crs: str) ->
     return template
 
 
-def _resample_global_to_tile_grid(
-    global_da: xr.DataArray, template: xr.DataArray
-) -> xr.DataArray:
+def _resample_global_to_tile_grid(global_da: xr.DataArray, template: xr.DataArray) -> xr.DataArray:
     """Reproject ``global_da`` onto the tile template grid (bilinear)."""
     return global_da.rio.reproject_match(template, resampling=1)  # 1 = bilinear
 
@@ -487,8 +481,10 @@ def run(
             if sub_path.exists():
                 sub_scores_global[crit] = _open_global_cog(sub_path)
 
-    src_path = source_path if source_path is not None else resolve_lola_source(
-        raw_dir, prefer_resolution_m=int(round(resolution_m))
+    src_path = (
+        source_path
+        if source_path is not None
+        else resolve_lola_source(raw_dir, prefer_resolution_m=int(round(resolution_m)))
     )
     echo(f"[tile-rank] LOLA source: {src_path}")
     elevation_source = _load_lola_source(src_path)
@@ -566,10 +562,7 @@ def run(
             # Don't let a single corrupt NPZ or transient OOM throw away
             # the work already done on the other 8 tiles. Record the
             # failure in the summary and continue.
-            echo(
-                f"[tile-rank] {region['Region']} ({code}): FAILED — "
-                f"{type(exc).__name__}: {exc}"
-            )
+            echo(f"[tile-rank] {region['Region']} ({code}): FAILED — {type(exc).__name__}: {exc}")
             summaries.append(
                 TileRankResult(
                     region_name=str(region["Region"]),
@@ -659,8 +652,7 @@ def run(
 
 def _format_summary_table(summaries: list[TileRankResult]) -> str:
     header = (
-        f"{'region':<22} {'code':<4} {'n':>3} {'best':>6} {'mean':>6} "
-        f"{'elig_pct':>10} {'sec':>7}"
+        f"{'region':<22} {'code':<4} {'n':>3} {'best':>6} {'mean':>6} {'elig_pct':>10} {'sec':>7}"
     )
     lines = [header]
     for s in summaries:
