@@ -379,7 +379,7 @@ def rank_per_region(
 
     Applies NASA's published HLS hard filters (slope ≤ 8°, 100 m
     buffer, illumination ≥ 33 %, DTE visibility ≥ 50 %) inside every
-    USGS-published Artemis III polygon, then ranks the survivors by
+    USGS-published Artemis IV (formerly Artemis III) polygon, then ranks the survivors by
     aggregate score. Sites are guaranteed inside their named polygon
     by construction.
 
@@ -608,7 +608,7 @@ def validate(
         help="Distance threshold (km) for the 'within X km of any centroid' metric.",
     ),
 ) -> None:
-    """Compare ranked sites against NASA's Artemis III candidate regions."""
+    """Compare ranked sites against NASA's Artemis IV (formerly Artemis III) candidate regions."""
     _validate.run(
         sites_path=sites_path,
         outputs_dir=outputs_dir,

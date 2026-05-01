@@ -35,7 +35,7 @@ def run(
     near_km: float = 25.0,
     echo: Callable[[str], None] = typer.echo,
 ) -> ProximityResult:
-    """Validate ranked sites against the NASA Artemis III candidates.
+    """Validate ranked sites against the NASA Artemis IV (formerly Artemis III) candidates.
 
     Args:
         sites_path: Path to ``top_sites.geojson``; defaults to

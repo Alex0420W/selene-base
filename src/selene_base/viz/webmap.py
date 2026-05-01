@@ -1,8 +1,8 @@
 """Folium-based standalone web map of ranked sites + NASA candidates.
 
 Renders the aggregate suitability score as a translucent PNG overlay,
-plots the top-N ranked sites with popups, draws NASA's nine Artemis III
-candidate disks, and exposes everything through a single
+plots the top-N ranked sites with popups, draws NASA's nine Artemis IV
+(formerly Artemis III) candidate disks, and exposes everything through a single
 :class:`folium.LayerControl` so reviewers can toggle layers in the
 browser. Output is a single self-contained HTML file — open it offline,
 no server, no CDN.
@@ -141,7 +141,7 @@ def build_map(
       visible by default).
     - **Top-N candidate sites** — numbered cyan circle markers with a
       per-criterion popup table.
-    - **NASA Artemis III candidate regions** — red disks with name
+    - **NASA Artemis IV (formerly Artemis III) candidate regions** — red disks with name
       tooltips.
     - **Per-criterion score layers** (slope, illumination, hazard) when
       their COGs are present in ``processed_dir / 'scored'``; off by
@@ -207,7 +207,7 @@ def build_map(
 
     # NASA candidate regions (in lon/lat already).
     nasa_geo = nasa_regions.to_crs(LUNAR_GEOGRAPHIC_CRS)
-    nasa_group = FeatureGroup(name="NASA Artemis III candidates", show=True)
+    nasa_group = FeatureGroup(name="NASA Artemis IV candidates", show=True)
     for _, region in nasa_geo.iterrows():
         coords = [(lat, lon) for lon, lat in region.geometry.exterior.coords]
         folium.Polygon(
@@ -217,7 +217,7 @@ def build_map(
             fill=True,
             fill_color="#e63946",
             fill_opacity=0.20,
-            tooltip=f"{region['name']} (NASA Artemis III)",
+            tooltip=f"{region['name']} (NASA Artemis IV)",
         ).add_to(nasa_group)
         folium.CircleMarker(
             location=(region["lat"], region["lon"]),
