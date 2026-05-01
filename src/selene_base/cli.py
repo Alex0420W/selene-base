@@ -18,6 +18,7 @@ from selene_base.pipeline import compare as _compare
 from selene_base.pipeline import compare_wueller as _compare_wueller
 from selene_base.pipeline import coupling_sweep as _coupling_sweep
 from selene_base.pipeline import preprocess as _preprocess
+from selene_base.pipeline import preprocess_tiled as _preprocess_tiled
 from selene_base.pipeline import rank as _rank
 from selene_base.pipeline import rank_per_region as _rank_per_region
 from selene_base.pipeline import score as _score
@@ -60,6 +61,15 @@ def download(
             "raw products. Lets the pipeline run end-to-end in seconds."
         ),
     ),
+    resolution: str = typer.Option(
+        "80m",
+        "--resolution",
+        help=(
+            "LOLA-only: native grid resolution to fetch. One of '80m' "
+            "(v1.4 default, ~115 MB) or '20m' (v1.5 high-res, ~1.85 GB). "
+            "Ignored for other datasets."
+        ),
+    ),
 ) -> None:
     """Fetch one or all source datasets to ``data/raw/``.
 
@@ -76,9 +86,33 @@ def download(
         for name, path in results.items():
             typer.echo(f"  {name:<14} ->{path}")
         return
+    if dataset is Dataset.lola:
+        res_m = _parse_resolution(resolution)
+        if res_m not in _download.LOLA_RESOLUTIONS_M:
+            raise typer.BadParameter(
+                f"--resolution must be one of {_download.LOLA_RESOLUTIONS_M!r} (got {resolution!r})",
+                param_hint="--resolution",
+            )
+        path = _download.download_lola(
+            _download.DEFAULT_RAW_DIR / dataset.value, resolution_m=res_m
+        )
+        typer.echo(f"  {dataset.value} ({res_m} m) ->{path}")
+        return
     handler = _download.DATASETS[dataset.value]
     path = handler(_download.DEFAULT_RAW_DIR / dataset.value)
     typer.echo(f"  {dataset.value} ->{path}")
+
+
+def _parse_resolution(value: str) -> int:
+    """Parse a CLI resolution string like '20m', '20', or '20 m' to int metres."""
+    s = str(value).strip().lower().rstrip("m").strip()
+    try:
+        return int(s)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"could not parse --resolution {value!r} as an integer in metres",
+            param_hint="--resolution",
+        ) from exc
 
 
 @app.command()
@@ -109,6 +143,34 @@ def preprocess(
             "and runs that don't need the los_to_earth criterion."
         ),
     ),
+    resolution: str | None = typer.Option(
+        None,
+        "--resolution",
+        help=(
+            "Override the analysis-grid resolution (in metres). Currently "
+            "only consulted in --tiled-per-region mode; the global driver "
+            "always uses the value from --region-config (240 m for v1.4)."
+        ),
+    ),
+    tiled_per_region: bool = typer.Option(
+        False,
+        "--tiled-per-region",
+        help=(
+            "v1.5 mode: skip the global preprocess loop and instead run the "
+            "Earth-LOS horizon-profile derivation per USGS region tile "
+            "(polygon bbox + 100 km buffer) on the GPU. Tiles are cached "
+            "as horizon_profile_southpole_<resolution>m_<region_code>.npz. "
+            "Pair with --resolution 20 for a Wueller-class high-resolution run."
+        ),
+    ),
+    region_code: list[str] | None = typer.Option(
+        None,
+        "--region-code",
+        help=(
+            "Tiled mode only: restrict the run to one or more USGS RegionCodes "
+            "(e.g. 'SP' for Slater Plain). Repeatable. Default: all 9 regions."
+        ),
+    ),
 ) -> None:
     """Reproject every available raw raster onto the common 240 m grid.
 
@@ -117,7 +179,35 @@ def preprocess(
     ``--overwrite`` is set. Datasets whose raw bytes are missing are
     logged and skipped; Robbins (vector) is rasterised by the hazard
     criterion in week 3 and is not warped here.
+
+    With ``--tiled-per-region`` (v1.5 mode), the global pipeline is
+    bypassed and the GPU horizon-profile derivation is run per USGS
+    polygon tile at ``--resolution`` metres.
     """
+    if tiled_per_region:
+        resolution_m = _parse_resolution(resolution) if resolution is not None else 20
+        tiled_results = _preprocess_tiled.run_tiled_per_region(
+            resolution_m=float(resolution_m),
+            region_codes=region_code if region_code else None,
+            processed_dir=processed_dir,
+            overwrite=overwrite,
+        )
+        typer.echo("")
+        typer.echo(_preprocess_tiled.format_summary(tiled_results))
+        return
+
+    if resolution is not None:
+        raise typer.BadParameter(
+            "--resolution is only honoured in --tiled-per-region mode; "
+            "the global driver reads resolution from --region-config.",
+            param_hint="--resolution",
+        )
+    if region_code:
+        raise typer.BadParameter(
+            "--region-code is only honoured in --tiled-per-region mode.",
+            param_hint="--region-code",
+        )
+
     results = _preprocess.run(
         region_config=region_config,
         processed_dir=processed_dir,
