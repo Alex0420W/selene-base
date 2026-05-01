@@ -1,25 +1,31 @@
 """Seismic criterion — penalises proximity to active lobate scarps.
 
 Civilini et al. (2023) re-located several Apollo-era shallow moonquakes
-to within tens of kilometres of young lobate scarps from the Watters
-catalog, suggesting active thrust faulting. The score is the per-pixel
-distance to the nearest scarp, capped at ``safe_distance_km``.
+and showed several of them cluster within tens of kilometres of young
+lobate scarps from the Watters et al. (2015) catalog, suggesting
+active thrust faulting. The score is a per-pixel logistic of distance
+to the nearest mapped scarp segment, with the transition tuned to
+that documented distance regime (cells inside ~5 km of a mapped scarp
+score near 0, cells beyond ~50 km score near 1).
 
-Two helpers:
+Three helpers:
 
-- :func:`distance_to_scarps` rasterises the scarp catalog into a
-  per-pixel "km to nearest scarp" grid via a KDTree on densified scarp
-  vertices.
-- :func:`compute` maps that distance grid to a [0, 1] score.
+- :func:`load_bundled_catalog` loads the Mishra & Kumar (2022) primary
+  scarp catalog from the in-repo bundle at
+  :mod:`selene_base.criteria.data.scarps_mishra_kumar_2022`.
+- :func:`distance_to_scarps` rasterises a scarp catalog into a
+  per-pixel "km to nearest scarp" grid via a KDTree on densified
+  vertices (~1 km spacing along each line).
+- :func:`compute` maps that distance grid to a ``[0, 1]`` score via a
+  logistic sigmoid (default midpoint 25 km, steepness scale 8 km).
 
-The scarp catalog itself is not yet wired (see
-``selene_base.data.download.download_scarps``), but the criterion runs
-against any GeoDataFrame the user supplies.
-
-Filled in week 3.
+Activated as a contributing criterion in v1.8 (eighth of eight); the
+scaffold landed in week 3 against synthetic catalogs.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -28,6 +34,47 @@ import xarray as xr
 from pyproj import Transformer
 from scipy.spatial import cKDTree
 from shapely.geometry import LineString, MultiLineString
+
+# In-repo scarp catalog bundle paths. The Mishra & Kumar 2022 file is the
+# primary data source consumed by `selene score`'s seismic criterion;
+# the LROC SOC Watters 2015 polar shapefile sits alongside as an
+# attribution anchor (see the bundle READMEs for full provenance).
+_BUNDLED_DATA_DIR = Path(__file__).parent / "data"
+BUNDLED_MISHRA_KUMAR_2022 = _BUNDLED_DATA_DIR / "scarps_mishra_kumar_2022" / "main_segments.shp"
+BUNDLED_WATTERS_2015_POLAR = (
+    _BUNDLED_DATA_DIR / "scarps_watters_2015_polar" / "polar_scarp_locations.shp"
+)
+
+
+def load_bundled_catalog(path: Path | None = None) -> gpd.GeoDataFrame:
+    """Load the in-repo scarp catalog used by the seismic criterion.
+
+    Defaults to the Mishra & Kumar (2022) 704-segment south-polar
+    shapefile bundled at
+    :data:`BUNDLED_MISHRA_KUMAR_2022`. Pass an explicit path to use a
+    different catalog (e.g. the bundled Watters 2015 polar locations
+    for a sanity comparison).
+
+    Args:
+        path: Override path. ``None`` uses the bundled Mishra & Kumar
+            primary file.
+
+    Returns:
+        GeoDataFrame with the catalog's native CRS preserved. The
+        seismic criterion's :func:`distance_to_scarps` reprojects to
+        the analysis grid's CRS at consumption time.
+
+    Raises:
+        FileNotFoundError: If the requested shapefile is missing.
+    """
+    src = Path(path) if path is not None else BUNDLED_MISHRA_KUMAR_2022
+    if not src.exists():
+        raise FileNotFoundError(
+            f"bundled scarp catalog not found at {src}; "
+            "the v1.8 release ships this file in-repo, so a missing "
+            "file usually indicates a broken installation."
+        )
+    return gpd.read_file(src)
 
 
 def _densify_to_points(
@@ -137,32 +184,61 @@ def distance_to_scarps(
 def compute(
     distance_km: xr.DataArray,
     *,
-    safe_distance_km: float = 50.0,
+    midpoint_km: float = 25.0,
+    steepness_km: float = 8.0,
 ) -> xr.DataArray:
-    """Map distance-to-scarp (km) to a [0, 1] safety score.
+    """Map distance-to-scarp (km) to a ``[0, 1]`` safety score via logistic.
 
-    ``score = clip(distance_km / safe_distance_km, 0, 1)``: a site
-    farther than ``safe_distance_km`` from the nearest scarp scores
-    1.0; closer sites lose score linearly.
+    ``score(d) = 1 / (1 + exp(-(d - midpoint_km) / steepness_km))``.
+
+    With the v1.8 defaults ``midpoint_km = 25``, ``steepness_km = 8``:
+
+    - ``d = 5 km``  → 0.08 (well inside Civilini et al. 2023's
+      shallow-moonquake-to-scarp clustering distance; high seismic risk)
+    - ``d = 15 km`` → 0.22
+    - ``d = 25 km`` → 0.50 (transition; matches the typical 10–50 km
+      epicentral-uncertainty regime documented for the relocated
+      Apollo-era moonquakes)
+    - ``d = 35 km`` → 0.78
+    - ``d = 50 km`` → 0.96 (effectively safe under the Civilini regime)
+
+    The logistic shape is preferred over a hard linear ramp because the
+    seismic-distance evidence is itself probabilistic — Civilini's
+    moonquake-to-scarp distances are noisy estimates with epicentral
+    uncertainty of order 10 km.
+
+    Cells where the catalog is empty (``+inf`` distance) are scored 1.0;
+    NaN distances propagate to NaN scores.
 
     Args:
         distance_km: DataArray of distances in km from
             :func:`distance_to_scarps`.
-        safe_distance_km: Distance at and above which the score is
-            1.0. Must be strictly positive.
+        midpoint_km: Distance at which the score crosses 0.5. Must be
+            strictly positive.
+        steepness_km: Logistic scale (km). Larger values produce a
+            gentler transition; smaller values approach a step
+            function. Must be strictly positive.
 
     Returns:
-        DataArray of [0, 1] scores aligned with ``distance_km``.
+        DataArray of ``[0, 1]`` scores aligned with ``distance_km``.
 
     Raises:
-        ValueError: If ``safe_distance_km`` is non-positive.
+        ValueError: If either parameter is non-positive.
     """
-    if safe_distance_km <= 0:
-        raise ValueError(f"safe_distance_km must be positive, got {safe_distance_km!r}")
+    if midpoint_km <= 0:
+        raise ValueError(f"midpoint_km must be positive, got {midpoint_km!r}")
+    if steepness_km <= 0:
+        raise ValueError(f"steepness_km must be positive, got {steepness_km!r}")
 
     arr = distance_km.to_numpy().astype(np.float64)
-    score = np.clip(arr / safe_distance_km, 0.0, 1.0)
-    score = np.where(np.isfinite(arr), score, 1.0)  # +inf (empty catalog) -> safe
+    # +inf (empty catalog or unreachable cell) → 1.0 directly; the
+    # logistic asymptotes there anyway, but skipping the exponent keeps
+    # numerical hygiene clean.
+    finite_mask = np.isfinite(arr)
+    score = np.full_like(arr, 1.0)
+    if finite_mask.any():
+        d = arr[finite_mask]
+        score[finite_mask] = 1.0 / (1.0 + np.exp(-(d - midpoint_km) / steepness_km))
     score = np.where(np.isnan(arr), np.nan, score)
 
     out = xr.DataArray(

@@ -333,16 +333,21 @@ def _seismic_score(
     scored_dir = processed_dir / SCORED_SUBDIR
     out_cog = scored_dir / "seismic_score_southpole_240m.tif"
 
+    # User-supplied overrides take precedence over the bundled default;
+    # the in-repo Mishra & Kumar 2022 shapefile (v1.8+) is the fallback
+    # so the criterion fires out of the box without any download.
     candidates = [
         raw_dir / "scarps" / "scarps_southpole.geojson",
         raw_dir / "scarps" / "scarps_southpole.csv",
+        seismic_criterion.BUNDLED_MISHRA_KUMAR_2022,
     ]
     scarps_path = next((p for p in candidates if p.exists()), None)
     if scarps_path is None:
         echo(
-            "[skip] seismic: Watters scarp catalog not present "
-            "(see download_scarps docstring; place file at "
-            f"{candidates[0].as_posix()})"
+            "[skip] seismic: no scarp catalog available — neither a "
+            "user-supplied override at "
+            f"{candidates[0].as_posix()} nor the bundled Mishra & Kumar "
+            f"2022 shapefile at {candidates[2].as_posix()} could be found"
         )
         return None
 
@@ -359,7 +364,12 @@ def _seismic_score(
         )
         return None
 
-    echo(f"[compute] seismic from {scarps_path.name}")
+    label = (
+        "Mishra & Kumar 2022 (bundled)"
+        if scarps_path == seismic_criterion.BUNDLED_MISHRA_KUMAR_2022
+        else scarps_path.name
+    )
+    echo(f"[compute] seismic from {label}")
     if scarps_path.suffix.lower() == ".csv":
         import pandas as pd
         from shapely.geometry import Point
