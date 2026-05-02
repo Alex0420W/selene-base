@@ -174,6 +174,19 @@ def preprocess(
             "(e.g. 'SP' for Slater Plain). Repeatable. Default: all 9 regions."
         ),
     ),
+    lola_source: Path | None = typer.Option(
+        None,
+        "--lola-source",
+        help=(
+            "Tiled mode only: explicit path to a LOLA elevation source file "
+            "(.tif/.lbl/.img). Bypasses the PDS-naming auto-detect, enabling "
+            "PGDA mosaics (e.g. ldem_83s_10mpp_adj.tif) and arbitrary "
+            "user-supplied DEMs. When omitted, the finest-resolution source "
+            "in data/raw/lola/ is picked automatically."
+        ),
+        exists=False,
+        dir_okay=False,
+    ),
 ) -> None:
     """Reproject every available raw raster onto the common 240 m grid.
 
@@ -194,6 +207,7 @@ def preprocess(
             region_codes=region_code if region_code else None,
             processed_dir=processed_dir,
             overwrite=overwrite,
+            source_path=lola_source,
         )
         typer.echo("")
         typer.echo(_preprocess_tiled.format_summary(tiled_results))
@@ -209,6 +223,11 @@ def preprocess(
         raise typer.BadParameter(
             "--region-code is only honoured in --tiled-per-region mode.",
             param_hint="--region-code",
+        )
+    if lola_source is not None:
+        raise typer.BadParameter(
+            "--lola-source is only honoured in --tiled-per-region mode.",
+            param_hint="--lola-source",
         )
 
     results = _preprocess.run(

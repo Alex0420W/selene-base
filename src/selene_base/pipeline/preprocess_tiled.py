@@ -101,10 +101,14 @@ class TiledHorizonResult:
     elapsed_s: float
 
 
+_VALID_LOLA_SUFFIXES: frozenset[str] = frozenset({".tif", ".lbl", ".img"})
+
+
 def resolve_lola_source(
     raw_dir: Path = DEFAULT_RAW_DIR,
     *,
     prefer_resolution_m: int | None = None,
+    override: Path | str | None = None,
 ) -> Path:
     """Pick the best available LOLA source IMG/LBL/TIF on disk.
 
@@ -112,19 +116,42 @@ def resolve_lola_source(
     → ``ldem_80s_80m.lbl`` → ``sample_lola.tif``). Pass
     ``prefer_resolution_m`` to require a specific resolution; the call
     raises :class:`FileNotFoundError` if that file is missing rather
-    than silently falling back to a coarser source.
+    than silently falling back to a coarser source. Pass ``override``
+    to bypass the priority list entirely with a caller-supplied path —
+    used for non-PDS-named sources like PGDA mosaics
+    (``ldem_83s_10mpp_adj.tif``) and arbitrary user-supplied DEMs.
 
     Args:
         raw_dir: Root of ``data/raw``.
         prefer_resolution_m: Require this native resolution (m). When
-            ``None``, any available source is acceptable.
+            ``None``, any available source is acceptable. Ignored when
+            ``override`` is supplied.
+        override: Explicit path to a LOLA source file. Bypasses both
+            the priority list and ``prefer_resolution_m``. The file
+            must exist and have a recognised suffix
+            (``.tif``/``.lbl``/``.img``).
 
     Returns:
         Absolute path to the LOLA source the loaders should open.
 
     Raises:
-        FileNotFoundError: If no acceptable source is on disk.
+        FileNotFoundError: If no acceptable source is on disk, or if
+            ``override`` is supplied but the file does not exist.
+        ValueError: If ``override`` is supplied with an unrecognised
+            file suffix.
     """
+    if override is not None:
+        path = Path(override)
+        if not path.exists():
+            raise FileNotFoundError(f"--lola-source path does not exist: {path}")
+        if not path.is_file():
+            raise FileNotFoundError(f"--lola-source path is not a file: {path}")
+        if path.suffix.lower() not in _VALID_LOLA_SUFFIXES:
+            raise ValueError(
+                f"--lola-source suffix {path.suffix!r} not recognised; "
+                f"expected one of {sorted(_VALID_LOLA_SUFFIXES)}"
+            )
+        return path
     lola_dir = Path(raw_dir) / "lola"
     if prefer_resolution_m is not None:
         path = lola_dir / f"ldem_80s_{prefer_resolution_m}m.lbl"
@@ -315,7 +342,7 @@ def run_tiled_per_region(
 
     processed_dir = Path(processed_dir)
     processed_dir.mkdir(parents=True, exist_ok=True)
-    src_path = source_path if source_path is not None else resolve_lola_source(raw_dir)
+    src_path = resolve_lola_source(raw_dir, override=source_path)
     echo(f"[load] LOLA source from {src_path}")
     elevation = _load_lola_source(src_path)
     echo(f"[load] elevation shape={elevation.shape!r} dtype={elevation.dtype!s}")
