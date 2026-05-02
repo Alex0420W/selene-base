@@ -10,6 +10,7 @@ list with caller-supplied path validation.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,15 @@ from selene_base.data.load import LUNAR_SOUTH_POLAR_CRS
 from selene_base.pipeline import preprocess_tiled
 
 POLAR_CRS = str(LUNAR_SOUTH_POLAR_CRS)
+
+# CI runners preserve ANSI colour codes and Rich's panel/line-wrapping that
+# local terminals strip; normalise both before substring-matching CLI output.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _normalise_cli_output(text: str) -> str:
+    """Strip ANSI escapes and collapse all whitespace runs to single spaces."""
+    return " ".join(_ANSI_RE.sub("", text).split())
 
 
 def _tiny_synthetic_tif(path: Path, resolution_m: float = 240.0) -> Path:
@@ -130,14 +140,20 @@ def test_cli_lola_source_flag_outside_tiled_mode_errors(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["preprocess", "--lola-source", str(src)])
 
     assert result.exit_code != 0
-    # Rich renders the error inside a bordered panel that wraps long lines,
-    # so check the distinctive substrings independently.
-    assert "Invalid value for --lola-source" in result.output
-    assert "tiled-per-region" in result.output
+    # Rich renders the error inside a bordered panel that wraps long lines and
+    # injects ANSI styling on CI terminals; check distinctive tokens that
+    # cannot straddle a wrap or escape-sequence boundary after normalisation.
+    flat = _normalise_cli_output(result.output)
+    assert "Invalid value" in flat
+    assert "lola-source" in flat
+    assert "tiled-per-region" in flat
 
 
 def test_cli_lola_source_flag_appears_in_help() -> None:
     """The CLI surface advertises the flag so users can discover it."""
     result = CliRunner().invoke(app, ["preprocess", "--help"])
     assert result.exit_code == 0, result.output
-    assert "--lola-source" in result.output
+    # Rich's help renderer may colourise option names and wrap the help body,
+    # so look for the bare flag stem after stripping ANSI + whitespace.
+    flat = _normalise_cli_output(result.output)
+    assert "lola-source" in flat
