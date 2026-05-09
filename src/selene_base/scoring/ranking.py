@@ -29,7 +29,7 @@ DEFAULT_CRITERIA = (
     "illumination",
     "eva_psr_access",
     "thermal",
-    "ice",
+    "multi_volatile",
     "hazard",
     "los_to_earth",
     "seismic",

@@ -47,7 +47,7 @@ CRITERION_RASTER_FILENAMES: dict[str, str] = {
     "illumination": "illumination_score_southpole_240m.tif",
     "eva_psr_access": "eva_psr_access_score_southpole_240m.tif",
     "thermal": "thermal_score_southpole_240m.tif",
-    "ice": "ice_score_southpole_240m.tif",
+    "multi_volatile": "multi_volatile_score_southpole_240m.tif",
     "los_to_earth": "los_to_earth_score_southpole_240m.tif",
 }
 

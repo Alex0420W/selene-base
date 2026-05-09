@@ -1,16 +1,24 @@
-# selene-base default weights (v2.0 — EVA-disc PSR access replaces coupling).
+# selene-base default weights (v2.1 — multi-class volatile criterion replaces ice).
 #
 # Eight criteria contribute to the aggregate score:
-# illumination, ice, eva_psr_access, los_to_earth, slope, thermal, hazard, seismic.
+# illumination, multi_volatile, eva_psr_access, los_to_earth, slope, thermal, hazard, seismic.
 #
-# v2.0 swaps the global spatial-coupling product (PSR-distance ×
-# ridge-distance multiplicative) for per-cell EVA-disc PSR access
-# (cold-class PSR area within a 2 km walking-EVA radius). The
-# methodological change is the headline; the *weight slot* stays at
-# 0.17 to preserve the v1.x relative balance (ice : illumination :
-# spatial-PSR-criterion = 0.17 : 0.17 : 0.17). This keeps the v1.9 → v2.0
-# comparison clean — any catalog-level shift attributable to the swap
-# reflects the methodology, not a re-weighting of the simplex.
+# v2.1 swaps the v1.x single ``ice`` criterion (PRP depth + PSR-proximity
+# bonus combined) for the three-class **multi_volatile** criterion that
+# distinguishes thermal-class accessibility within the 2 km walking-EVA
+# disc: H₂O (<110 K), CO₂/NH₃ (<66 K), and ultra-cold (<60 K). Mirrors
+# NASA's documented volatile-diversity priority (Paige 2010; Hayne 2020)
+# and Wueller 2026's per-class treatment. Default sub-weights inside
+# multi_volatile are equal at (1/3, 1/3, 1/3) — agnostic on NASA's
+# preference ordering between volatile classes.
+#
+# v2.0 swapped the v1.x global spatial-coupling product for per-cell
+# EVA-disc PSR access at the same 0.17 weight slot.
+#
+# **The weight slot stays at 0.17** for both v2.0 and v2.1 swaps — same
+# value the v1.x single ``ice`` criterion held — so any catalog-level
+# shift attributable to either swap reflects the new criterion's
+# geometry, not a moved weight on the simplex.
 #
 # v1.8 activated the seismic criterion (distance-to-nearest-scarp via
 # Mishra & Kumar 2022's south-polar lobate-scarp catalog) at weight 0.10.
@@ -18,17 +26,18 @@
 # Why 0.15 for los_to_earth (unchanged ratio from v1.1.0):
 # - Real physical criterion NASA prioritises in actual mission planning.
 # - More binary-ish than continuous, so weighted slightly less than
-#   illumination/ice/eva_psr_access.
+#   illumination/multi_volatile/eva_psr_access.
 #
 # This vector was chosen on physics-and-operations grounds, not by
 # fitting to validation data. Older vectors are preserved:
 #   config/weights_legacy.yaml      — five criteria (no coupling, no LOS).
 #   config/weights_legacy_v6.yaml   — six criteria (no LOS).
-# The v1.8 vector (seven criteria + coupling) is the v2.0 vector with
-# eva_psr_access renamed back to coupling.
+# The v1.8 vector (seven criteria + coupling + ice) is the v2.1 vector
+# with eva_psr_access renamed back to coupling and multi_volatile renamed
+# back to ice.
 
 illumination: 0.17
-ice: 0.17
+multi_volatile: 0.17
 eva_psr_access: 0.17
 los_to_earth: 0.14
 slope: 0.12
