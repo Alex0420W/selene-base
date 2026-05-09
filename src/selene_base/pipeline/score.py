@@ -15,13 +15,18 @@ v2.0 swaps the global spatial-coupling product (PSR-distance ×
 ridge-distance) for the per-cell EVA-disc PSR access criterion
 (:mod:`selene_base.criteria.eva_psr_access`), aligning with NASA's
 documented walking-EVA framing (EVA-EXP-0070 Rev D, A3GT LPSC 2025).
-The coupling module remains in tree for the legacy ``coupling-sweep``
-sensitivity utility but is no longer in the active criterion set.
+v2.1 swaps the single ``ice`` criterion (PRP ice-depth + PSR-proximity
+bonus) for the three-class volatile-access criterion
+(:mod:`selene_base.criteria.multi_volatile`), distinguishing H₂O
+(<110 K), CO₂/NH₃ (<66 K), and ultra-cold (<60 K) thermal classes
+inside the same 2 km EVA disc. Both legacy modules stay in tree for
+sensitivity / comparison utilities but are no longer in the active
+criterion set.
 
 Week 3 covered the original six criteria; v1.5+ added LOS-to-Earth;
-v1.8 activated seismic; v2.0 swapped coupling for eva_psr_access.
-Missing source data (Diviner, LEND, scarps) makes the relevant
-criterion skip cleanly.
+v1.8 activated seismic; v2.0 swapped coupling for eva_psr_access;
+v2.1 swapped ice for multi_volatile. Missing source data (Diviner,
+LEND, scarps) makes the relevant criterion skip cleanly.
 """
 
 from __future__ import annotations
@@ -44,13 +49,13 @@ from selene_base.criteria import (
     hazard as hazard_criterion,
 )
 from selene_base.criteria import (
-    ice as ice_criterion,
-)
-from selene_base.criteria import (
     illumination as illumination_criterion,
 )
 from selene_base.criteria import (
     los_to_earth as los_to_earth_criterion,
+)
+from selene_base.criteria import (
+    multi_volatile as multi_volatile_criterion,
 )
 from selene_base.criteria import (
     seismic as seismic_criterion,
@@ -226,7 +231,7 @@ def _thermal_score(
     return out_path
 
 
-def _ice_score(
+def _multi_volatile_score(
     processed_dir: Path,
     *,
     pixel_size_m: float,
@@ -234,30 +239,50 @@ def _ice_score(
     echo: Callable[[str], None],
     raw_dir: Path,
 ) -> Path | None:
-    ice_depth_cog = processed_dir / "diviner_ice_depth_southpole_240m.tif"
-    if not ice_depth_cog.exists():
+    temp_max_cog = processed_dir / "diviner_temp_max_southpole_240m.tif"
+    if not temp_max_cog.exists():
         echo(
-            "[skip] ice: Diviner PRP ice_depth COG not present; "
-            "run `selene download diviner` then `selene preprocess`"
+            "[skip] multi_volatile: Diviner PRP temp_max COG not present at "
+            f"{temp_max_cog}; run `selene download diviner` then `selene preprocess`"
         )
         return None
 
     scored_dir = processed_dir / SCORED_SUBDIR
-    out_cog = scored_dir / "ice_score_southpole_240m.tif"
+    out_cog = scored_dir / "multi_volatile_score_southpole_240m.tif"
     if out_cog.exists() and not overwrite:
-        echo(f"[skip] ice: {out_cog.name} already cached")
+        echo(f"[skip] multi_volatile: {out_cog.name} already cached")
         return out_cog
 
-    echo(f"[compute] ice from {ice_depth_cog.name}")
-    ice_depth = _open_cog(ice_depth_cog)
-    psr_mask: xr.DataArray | None = None
-    illum_cog = processed_dir / "illumination_southpole_240m.tif"
-    if illum_cog.exists():
-        echo("           (using PSR mask derived from illumination)")
-        psr_mask = ice_criterion.derive_psr_mask(_open_cog(illum_cog))
-    score = ice_criterion.compute(ice_depth, psr_mask=psr_mask, pixel_size_m=pixel_size_m)
-    out_path = cache_processed(score, "ice_score", scored_dir, overwrite=overwrite)
-    echo(f"[done] ice -> {out_path}")
+    echo(
+        f"[compute] multi_volatile from {temp_max_cog.name} "
+        "(2 km EVA disc, H₂O<110 K + CO₂/NH₃<66 K + ultra-cold<60 K)"
+    )
+    temp_max = _open_cog(temp_max_cog)
+    components = multi_volatile_criterion.compute_components(temp_max, pixel_size_m=pixel_size_m)
+    # Persist all four arrays so per-class diagnostics survive without
+    # rerunning preprocess+score: the combined score lands at the
+    # canonical filename (the active criterion grid the aggregator
+    # consumes); the three sub-scores land alongside as `_h2o`,
+    # `_co2_nh3`, and `_ultracold` siblings for downstream reporting.
+    out_path = cache_processed(
+        components["combined_score"], "multi_volatile_score", scored_dir, overwrite=overwrite
+    )
+    cache_processed(
+        components["h2o_score"], "multi_volatile_score_h2o", scored_dir, overwrite=overwrite
+    )
+    cache_processed(
+        components["co2_nh3_score"],
+        "multi_volatile_score_co2_nh3",
+        scored_dir,
+        overwrite=overwrite,
+    )
+    cache_processed(
+        components["ultracold_score"],
+        "multi_volatile_score_ultracold",
+        scored_dir,
+        overwrite=overwrite,
+    )
+    echo(f"[done] multi_volatile -> {out_path}")
     return out_path
 
 
@@ -394,7 +419,7 @@ CRITERION_FUNCS: dict[str, Callable[..., Path | None]] = {
     "eva_psr_access": _eva_psr_access_score,
     "hazard": _hazard_score,
     "thermal": _thermal_score,
-    "ice": _ice_score,
+    "multi_volatile": _multi_volatile_score,
     "los_to_earth": _los_to_earth_score,
     "seismic": _seismic_score,
 }

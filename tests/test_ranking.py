@@ -65,8 +65,17 @@ class TestTopNSites:
         score = _score_grid(np.zeros((5, 5)))
         sites = top_n_sites(score, n=5, min_distance_m=1.0, min_score=0.5)
         assert len(sites) == 0
-        # Schema must still include the per-criterion columns.
-        for crit in ("slope", "illumination", "thermal", "ice", "hazard", "seismic"):
+        # Schema must still include the per-criterion columns (v2.1 list).
+        for crit in (
+            "slope",
+            "illumination",
+            "thermal",
+            "multi_volatile",
+            "hazard",
+            "seismic",
+            "eva_psr_access",
+            "los_to_earth",
+        ):
             assert f"score_{crit}" in sites.columns
 
     def test_sub_scores_attached(self) -> None:
@@ -84,8 +93,8 @@ class TestTopNSites:
         )
         assert sites["score_slope"].iloc[0] == pytest.approx(0.5)
         assert sites["score_hazard"].iloc[0] == pytest.approx(0.8)
-        # Untouched criteria stay NaN.
-        for crit in ("illumination", "thermal", "ice", "seismic"):
+        # Untouched criteria stay NaN (v2.1 list).
+        for crit in ("illumination", "thermal", "multi_volatile", "seismic"):
             assert np.isnan(sites[f"score_{crit}"].iloc[0])
 
     def test_lat_lon_present_and_finite(self) -> None:
