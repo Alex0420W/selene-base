@@ -67,6 +67,7 @@ from selene_base.pipeline.preprocess_tiled import (
     TileSpec,
     _load_lola_source,
     compute_tile_specs,
+    existing_horizon_cache_path,
     horizon_npz_path,
     reproject_to_tile,
     resolve_lola_source,
@@ -124,23 +125,46 @@ def _resample_global_to_tile_grid(global_da: xr.DataArray, template: xr.DataArra
 
 
 def _load_horizon_profile_npz(
-    npz_path: Path,
+    cache_path: Path,
     tile_template: xr.DataArray,
     target_crs: str,
 ) -> xr.DataArray:
-    """Load a per-tile horizon-profile NPZ and wrap it in an xarray DataArray.
+    """Load a per-tile horizon-profile cache and wrap it in an xarray DataArray.
 
-    The NPZ stores raw arrays without CRS metadata; we attach the tile
-    template's coords and CRS so the result can be passed straight into
-    :func:`compute_earth_visibility_fraction`.
+    Detects the on-disk format from the file's suffix:
+
+    - ``.npy`` (v1.9 chunked path): the bulk float32 horizon array,
+      mmap-loaded with ``mmap_mode='r'`` so the rank stage can slice
+      row-chunks on demand without materialising the full ~70 GB tensor
+      in unified memory. The metadata fields live in a sibling
+      ``<base>.meta.npz``.
+    - ``.npz`` (v1.5 single-file path): legacy compressed cache containing
+      both bulk array and metadata; ``arr["horizon_profile_deg"]``
+      decompresses fully into memory (acceptable at v1.5 tile sizes
+      where the full array is ~17 GB).
+
+    Either way the cache stores raw arrays without CRS metadata; we
+    attach the tile template's coords and CRS so the result can be
+    passed straight into :func:`compute_earth_visibility_fraction`.
     """
-    arr = np.load(npz_path, allow_pickle=False)
-    horizon = arr["horizon_profile_deg"]
-    azimuth_deg = arr["azimuth_deg"]
+    if cache_path.suffix == ".npy":
+        meta_path = cache_path.with_suffix(".meta.npz")
+        if not meta_path.exists():
+            raise FileNotFoundError(
+                f"horizon cache .npy at {cache_path} has no sibling "
+                f"{meta_path.name}; the v1.9 chunked path writes both."
+            )
+        horizon = np.load(cache_path, mmap_mode="r", allow_pickle=False)
+        meta = np.load(meta_path, allow_pickle=False)
+        azimuth_deg = meta["azimuth_deg"]
+    else:
+        arr = np.load(cache_path, allow_pickle=False)
+        horizon = arr["horizon_profile_deg"]
+        azimuth_deg = arr["azimuth_deg"]
     if horizon.shape[1:] != tile_template.shape:
         raise ValueError(
-            f"horizon NPZ shape {horizon.shape!r} does not match tile template "
-            f"{tile_template.shape!r} — was the NPZ produced at this resolution?"
+            f"horizon cache shape {horizon.shape!r} does not match tile template "
+            f"{tile_template.shape!r} — was the cache produced at this resolution?"
         )
     da = xr.DataArray(
         horizon,
@@ -163,6 +187,14 @@ def _compute_lat_lon_gamma(
     Mirrors the global preprocess (preprocess.py LOS section): compute
     geographic lat/lon by transforming projected (x, y) and grid
     convergence ``γ = atan2(x_p, y_p)`` directly.
+
+    Output arrays are ``float32`` (not ``float64``): each tile's
+    (height, width) field is up to 22000² ≈ 484 M elements, so float64
+    would be ~3.87 GB per array and three of them ~11.6 GB persistent
+    memory. Float32 still resolves a 220 km × 220 km tile to ~26 mm
+    per pixel, well below the 10 m grid resolution; the libration-loop
+    ``arctan2`` / ``arcsin`` math downstream upcasts to float64 inside
+    each slab on demand. Halves persistent memory on the host.
     """
     xs = template["x"].to_numpy()
     ys = template["y"].to_numpy()
@@ -172,14 +204,19 @@ def _compute_lat_lon_gamma(
     )
     lons, lats = transformer.transform(xx, yy)
     pixel_lat = xr.DataArray(
-        lats.astype(np.float64), dims=template.dims, coords=template.coords
+        lats.astype(np.float32), dims=template.dims, coords=template.coords
     ).rio.write_crs(target_crs, inplace=False)
     pixel_lon = xr.DataArray(
-        lons.astype(np.float64), dims=template.dims, coords=template.coords
+        lons.astype(np.float32), dims=template.dims, coords=template.coords
     ).rio.write_crs(target_crs, inplace=False)
     gamma = xr.DataArray(
-        np.arctan2(xx, yy).astype(np.float64), dims=template.dims, coords=template.coords
+        np.arctan2(xx, yy).astype(np.float32), dims=template.dims, coords=template.coords
     ).rio.write_crs(target_crs, inplace=False)
+    # Drop the intermediate float64 meshgrid + lons/lats temporaries
+    # before returning so the caller sees ~half the steady-state
+    # footprint and the next allocation isn't competing with them.
+    del xs, ys, xx, yy, lons, lats
+    gc.collect()
     return pixel_lat, pixel_lon, gamma
 
 
@@ -237,18 +274,39 @@ def process_tile(
     ).rename("elevation_m")
     slope_tile = derive_slope_degrees(elev_tile, pixel_size_m=resolution_m)
 
-    # ---- per-tile LOS visibility from the v1.5 horizon NPZ ----
+    # ---- per-tile LOS visibility from the v1.5/v1.9 horizon cache ----
     horizon_tile = _load_horizon_profile_npz(horizon_npz, template, target_crs)
     pixel_lat, pixel_lon, gamma = _compute_lat_lon_gamma(template, target_crs)
+    # Pick a row-chunk size so the per-slab GPU + page-cache footprint fits
+    # in unified memory at high resolution. v1.5 (20 m, ~11000 px) loads the
+    # full tile in one shot (chunk == height); v1.9 (10 m, ~22000 px) caps
+    # each slab at ~1500 rows so the (36, chunk, width) float32 working
+    # buffer is ~5 GiB and the page-cache pressure from the strided mmap
+    # read stays tractable alongside the persistent ~17 GB rank-tile state.
+    h, w = horizon_tile.shape[1], horizon_tile.shape[2]
+    full_bytes = 36 * h * w * 4
+    row_chunk_size: int | None = None
+    if full_bytes > 18 * 1024**3:
+        per_row_bytes = max(1, 36 * w * 4)
+        row_chunk_size = max(1, (5 * 1024**3) // per_row_bytes)
     # Try the GPU path first; fall back silently on hosts without CuPy
     # (e.g. CI). The visibility sweep is the dominant CPU cost at 20 m.
     try:
         los_tile = los_to_earth.compute_earth_visibility_fraction(
-            horizon_tile, pixel_lat, pixel_lon, gamma, use_gpu=True
+            horizon_tile,
+            pixel_lat,
+            pixel_lon,
+            gamma,
+            use_gpu=True,
+            row_chunk_size=row_chunk_size,
         )
     except RuntimeError:
         los_tile = los_to_earth.compute_earth_visibility_fraction(
-            horizon_tile, pixel_lat, pixel_lon, gamma
+            horizon_tile,
+            pixel_lat,
+            pixel_lon,
+            gamma,
+            row_chunk_size=row_chunk_size,
         )
     # Drop the heaviest temporaries (~17 GB float32 horizon profile +
     # ~3 GB lat/lon/gamma) immediately. They are not needed past this
@@ -519,11 +577,15 @@ def run(
         if spec is None:
             echo(f"[tile-rank] {region['Region']}: missing tile spec (skipped)")
             continue
-        npz = horizon_npz_path(processed_dir, resolution_m=resolution_m, region_code=code)
-        if not npz.exists():
+        cache = existing_horizon_cache_path(
+            processed_dir, resolution_m=resolution_m, region_code=code
+        )
+        if cache is None:
+            npz = horizon_npz_path(processed_dir, resolution_m=resolution_m, region_code=code)
             echo(
-                f"[tile-rank] {region['Region']}: horizon NPZ missing at {npz}; "
-                "run `selene preprocess --tiled-per-region --resolution "
+                f"[tile-rank] {region['Region']}: horizon cache missing at {npz} "
+                f"(or sibling .npy + .meta.npz pair); run "
+                f"`selene preprocess --tiled-per-region --resolution "
                 f"{int(round(resolution_m))}` first."
             )
             summaries.append(
@@ -543,7 +605,7 @@ def run(
             rows, summary = process_tile(
                 spec,
                 elevation_source=elevation_source,
-                horizon_npz=npz,
+                horizon_npz=cache,
                 illumination_global=illumination_global,
                 score_global=score_global,
                 sub_scores_global=sub_scores_global,

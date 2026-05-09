@@ -52,6 +52,10 @@ Filled in week 9.
 
 from __future__ import annotations
 
+import contextlib
+import gc
+import mmap as _mmap_mod
+
 import numpy as np
 import rioxarray  # noqa: F401  (registers the .rio accessor)
 import xarray as xr
@@ -74,6 +78,8 @@ def derive_horizon_profile(
     moon_radius_m: float = DEFAULT_MOON_RADIUS_M,
     n_distance_samples: int = 50,
     use_gpu: bool = False,
+    azimuth_chunk_size: int | None = None,
+    out: np.ndarray | None = None,
 ) -> xr.DataArray:
     """For each pixel, compute the maximum horizon elevation angle in
     ``n_azimuths`` grid-azimuth directions.
@@ -136,6 +142,28 @@ def derive_horizon_profile(
             DataArray remains numpy-backed for downstream compatibility.
             Numerically equivalent to the CPU path within float32 ULP;
             see ``tests/test_los_to_earth_gpu.py`` for the tolerance.
+        azimuth_chunk_size: When set to a positive integer < ``n_azimuths``,
+            process azimuths in groups of this size and accumulate results
+            into ``out`` slice by slice. Cuts peak GPU/unified-memory
+            footprint of the per-chunk working buffer linearly with chunk
+            size: at ``n_azimuths=36`` and ``chunk=9``, the working buffer
+            is 1/4 the unchunked size. Required for resolutions ≤ 10 m on
+            unified-memory GPUs (GB10 / DGX Spark) where the full
+            ``(36, height, width)`` output would exceed the unified-memory
+            cap. ``None`` (default) preserves the v1.5 behaviour: allocate
+            the full output array on device. Numerically identical to the
+            unchunked path within float32 precision (verified by
+            ``tests/test_per_azimuth_chunking.py``).
+        out: Optional pre-allocated host-side ``(n_azimuths, height, width)``
+            float32 ndarray to write results into. Useful with
+            ``np.lib.format.open_memmap`` to back the accumulator with an
+            on-disk file rather than unified memory — required at 10 m on
+            GB10 because host memory and GPU memory share the same physical
+            pool, so any in-memory accumulator competes with the GPU
+            allocation. When ``None`` (default), a regular ``np.full``
+            host array is allocated; in chunked mode this still consumes
+            unified memory and is unsuitable for large grids on
+            unified-memory hardware.
 
     Returns:
         DataArray with dims ``(azimuth, y, x)`` and values in degrees.
@@ -157,6 +185,8 @@ def derive_horizon_profile(
         raise ValueError(f"n_distance_samples must be positive, got {n_distance_samples!r}")
     if elevation.ndim != 2:
         raise ValueError(f"elevation must be 2D (y, x), got dims {elevation.dims!r}")
+    if azimuth_chunk_size is not None and azimuth_chunk_size <= 0:
+        raise ValueError(f"azimuth_chunk_size must be positive or None, got {azimuth_chunk_size!r}")
 
     if use_gpu:
         try:
@@ -174,53 +204,99 @@ def derive_horizon_profile(
     arr = xp.asarray(elevation.to_numpy(), dtype=xp.float32)
     height, width = arr.shape
 
+    if out is not None:
+        if out.shape != (n_azimuths, height, width):
+            raise ValueError(
+                f"out shape {out.shape!r} does not match expected ({n_azimuths}, {height}, {width})"
+            )
+        if out.dtype != np.float32:
+            raise ValueError(f"out dtype must be float32, got {out.dtype!r}")
+        host_out = out
+        host_out[...] = -90.0
+    else:
+        host_out = np.full((n_azimuths, height, width), -90.0, dtype=np.float32)
+
+    chunk = azimuth_chunk_size if azimuth_chunk_size is not None else n_azimuths
+    chunk = min(chunk, n_azimuths)
+
     # distances_m only feeds python scalars into the loop body; keep on host
     # to avoid a device->host sync per (azimuth, distance) iteration.
     distances_m = np.geomspace(
         pixel_size_m, max_horizon_km * 1000.0, n_distance_samples, dtype=np.float32
     )
 
-    horizon_deg = xp.full((n_azimuths, height, width), -90.0, dtype=xp.float32)
-
     row_idx = xp.arange(height, dtype=xp.float32)[:, None]
     col_idx = xp.arange(width, dtype=xp.float32)[None, :]
 
-    for k in range(n_azimuths):
-        az_rad = 2.0 * np.pi * k / n_azimuths
-        # Step direction in (col, row) per metre. +y_grid points to
-        # smaller row indices in a standard COG (positive y resolution
-        # ascending), so row_dir flips sign of cos(az).
-        col_dir = float(np.sin(az_rad))
-        row_dir = float(-np.cos(az_rad))
+    for chunk_start in range(0, n_azimuths, chunk):
+        chunk_end = min(chunk_start + chunk, n_azimuths)
+        chunk_size = chunk_end - chunk_start
 
-        horizon_az = horizon_deg[k]
-        for d_m in distances_m:
-            d_pix = float(d_m) / pixel_size_m
-            sample_row = row_idx + row_dir * d_pix
-            sample_col = col_idx + col_dir * d_pix
-            ele_at_d = _map_coords(
-                arr,
-                xp.stack(
-                    [
-                        xp.broadcast_to(sample_row, (height, width)),
-                        xp.broadcast_to(sample_col, (height, width)),
-                    ]
-                ),
-                order=1,
-                mode="constant",
-                # cupyx.scipy.ndimage.map_coordinates JIT only accepts
-                # ``np.nan`` (the module-level singleton) for cval=NaN; passing
-                # a plain ``float('nan')`` or ``np.float32('nan')`` triggers a
-                # codegen bug ("invalid type conversion: out = (Y)nan").
-                # Equivalent on CPU; required on GPU. cupy 14.0.1 / CUDA 13.
-                cval=np.nan,
-            )
-            curvature_drop = float(d_m) * float(d_m) / (2.0 * moon_radius_m)
-            apparent_height = ele_at_d - arr - curvature_drop
-            angle_deg = xp.degrees(xp.arctan2(apparent_height, float(d_m)))
-            xp.fmax(horizon_az, angle_deg, out=horizon_az)
+        # Per-chunk working buffer: (chunk_size, height, width) float32.
+        # On unified memory this is the dominant allocation alongside the
+        # scratch arrays inside the inner ray-march loop. At full
+        # n_azimuths chunk this matches v1.5's behaviour exactly.
+        horizon_chunk = xp.full((chunk_size, height, width), -90.0, dtype=xp.float32)
 
-    horizon_np = horizon_deg.get() if use_gpu else horizon_deg
+        for k_local, k in enumerate(range(chunk_start, chunk_end)):
+            az_rad = 2.0 * np.pi * k / n_azimuths
+            # Step direction in (col, row) per metre. +y_grid points to
+            # smaller row indices in a standard COG (positive y resolution
+            # ascending), so row_dir flips sign of cos(az).
+            col_dir = float(np.sin(az_rad))
+            row_dir = float(-np.cos(az_rad))
+
+            horizon_az = horizon_chunk[k_local]
+            for d_m in distances_m:
+                d_pix = float(d_m) / pixel_size_m
+                sample_row = row_idx + row_dir * d_pix
+                sample_col = col_idx + col_dir * d_pix
+                ele_at_d = _map_coords(
+                    arr,
+                    xp.stack(
+                        [
+                            xp.broadcast_to(sample_row, (height, width)),
+                            xp.broadcast_to(sample_col, (height, width)),
+                        ]
+                    ),
+                    order=1,
+                    mode="constant",
+                    # cupyx.scipy.ndimage.map_coordinates JIT only accepts
+                    # ``np.nan`` (the module-level singleton) for cval=NaN; passing
+                    # a plain ``float('nan')`` or ``np.float32('nan')`` triggers a
+                    # codegen bug ("invalid type conversion: out = (Y)nan").
+                    # Equivalent on CPU; required on GPU. cupy 14.0.1 / CUDA 13.
+                    cval=np.nan,
+                )
+                curvature_drop = float(d_m) * float(d_m) / (2.0 * moon_radius_m)
+                apparent_height = ele_at_d - arr - curvature_drop
+                angle_deg = xp.degrees(xp.arctan2(apparent_height, float(d_m)))
+                xp.fmax(horizon_az, angle_deg, out=horizon_az)
+
+        # Copy this chunk's azimuths into the host accumulator. When
+        # ``host_out`` is mmap-backed (GB10 high-resolution path), the OS
+        # pages writes to disk lazily and the in-memory accumulator
+        # footprint stays bounded by the per-chunk working buffer.
+        if use_gpu:
+            host_out[chunk_start:chunk_end] = horizon_chunk.get()
+        else:
+            host_out[chunk_start:chunk_end] = horizon_chunk
+
+        # Release the per-chunk GPU buffer + free the CuPy mempool blocks
+        # so the next chunk starts with a clean slate. Without this, the
+        # mempool grows monotonically and the chunked path provides no
+        # memory benefit over the unchunked one.
+        del horizon_chunk
+        if use_gpu:
+            try:
+                xp.get_default_memory_pool().free_all_blocks()
+                xp.get_default_pinned_memory_pool().free_all_blocks()
+            except Exception:
+                pass
+
+    if isinstance(host_out, np.memmap):
+        host_out.flush()
+    horizon_np = host_out
 
     azimuth_deg = np.degrees(2.0 * np.pi * np.arange(n_azimuths) / n_azimuths)
     out = xr.DataArray(
@@ -247,6 +323,7 @@ def compute_earth_visibility_fraction(
     earth_max_libration_lon_deg: float = EARTH_MAX_LIBRATION_LON_DEG,
     n_libration_samples: int = DEFAULT_N_LIBRATION_SAMPLES,
     use_gpu: bool = False,
+    row_chunk_size: int | None = None,
 ) -> xr.DataArray:
     """For each pixel, compute the fraction of the libration cycle
     during which Earth is above the local horizon.
@@ -289,10 +366,23 @@ def compute_earth_visibility_fraction(
             compatibility. Numerically equivalent to the CPU path
             within float64 ULP. Falls back to NumPy on hosts without
             CuPy.
+        row_chunk_size: When set to a positive integer, iterate over
+            row-slabs of that height instead of loading the full horizon
+            array on device. Required at high resolutions on
+            unified-memory GPUs (GB10): a 22000×22000 tile's full
+            ``(36, 22000, 22000)`` float32 horizon profile is ~70 GB;
+            row-chunked at ``row_chunk_size=2000`` the per-slab device
+            footprint drops to ~6.3 GB. Pair with a ``horizon_profile``
+            backed by ``np.lib.format.open_memmap`` (the v1.9 chunked
+            preprocess cache) so each slab is paged from disk on demand
+            rather than held in unified memory. Numerically identical to
+            the unchunked path within float64 ULP.
 
     Returns:
         2D DataArray ``(y, x)`` of visibility fractions in ``[0, 1]``.
     """
+    if row_chunk_size is not None and row_chunk_size <= 0:
+        raise ValueError(f"row_chunk_size must be positive or None, got {row_chunk_size!r}")
     if n_libration_samples <= 0:
         raise ValueError(f"n_libration_samples must be positive, got {n_libration_samples!r}")
     if earth_max_libration_lat_deg <= 0 or earth_max_libration_lon_deg <= 0:
@@ -312,25 +402,23 @@ def compute_earth_visibility_fraction(
     else:
         xp = np
 
-    horizon = xp.asarray(horizon_profile.to_numpy(), dtype=xp.float32)
-    n_az = horizon.shape[0]
-    if horizon.ndim != 3:
-        raise ValueError(f"horizon_profile must be 3D (azimuth, y, x), got {horizon.shape!r}")
+    horizon_np = horizon_profile.to_numpy()
+    if horizon_np.ndim != 3:
+        raise ValueError(f"horizon_profile must be 3D (azimuth, y, x), got {horizon_np.shape!r}")
+    n_az = horizon_np.shape[0]
 
-    lat_rad = xp.deg2rad(xp.asarray(pixel_lat_deg.to_numpy(), dtype=xp.float64))
-    lon_rad = xp.deg2rad(xp.asarray(pixel_lon_deg.to_numpy(), dtype=xp.float64))
-    gamma_rad = xp.asarray(grid_convergence_rad.to_numpy(), dtype=xp.float64)
-    if not (lat_rad.shape == lon_rad.shape == gamma_rad.shape == horizon.shape[1:]):
+    lat_np = pixel_lat_deg.to_numpy()
+    lon_np = pixel_lon_deg.to_numpy()
+    gamma_np = grid_convergence_rad.to_numpy()
+    if not (lat_np.shape == lon_np.shape == gamma_np.shape == horizon_np.shape[1:]):
         raise ValueError(
-            f"shape mismatch: lat={lat_rad.shape!r} lon={lon_rad.shape!r} "
-            f"gamma={gamma_rad.shape!r} horizon-yx={horizon.shape[1:]!r}"
+            f"shape mismatch: lat={lat_np.shape!r} lon={lon_np.shape!r} "
+            f"gamma={gamma_np.shape!r} horizon-yx={horizon_np.shape[1:]!r}"
         )
 
-    cos_lat = xp.cos(lat_rad)
-    sin_lat = xp.sin(lat_rad)
-
-    height, width = lat_rad.shape
-    visibility_count = xp.zeros((height, width), dtype=xp.int32)
+    height, width = lat_np.shape
+    chunk = row_chunk_size if row_chunk_size is not None else height
+    chunk = min(chunk, height)
 
     # Libration parametric coordinates kept on host — they are length-24
     # 1-D vectors that feed scalars into the loop body, so a device
@@ -341,33 +429,71 @@ def compute_earth_visibility_fraction(
 
     az_step_rad = 2.0 * np.pi / n_az
 
-    for phi_e, lambda_e in zip(libration_lat_rad, libration_lon_rad, strict=True):
-        cos_phi_e = float(np.cos(phi_e))
-        sin_phi_e = float(np.sin(phi_e))
-        cos_lon_diff = xp.cos(lon_rad - float(lambda_e))
-        sin_lon_diff = xp.sin(lon_rad - float(lambda_e))
+    visibility_count = np.zeros((height, width), dtype=np.int32)
 
-        # Earth elevation: arcsin(e · u) where u is local up.
-        e_dot_u = cos_lat * cos_phi_e * cos_lon_diff + sin_lat * sin_phi_e
-        earth_elev_deg = xp.degrees(xp.arcsin(xp.clip(e_dot_u, -1.0, 1.0)))
+    for y0 in range(0, height, chunk):
+        y1 = min(y0 + chunk, height)
+        # Slice the row-slab from each input. A mmap-backed
+        # ``horizon_profile`` pages just these rows from disk; in-memory
+        # arrays just view them.
+        horizon_slab = xp.asarray(horizon_np[:, y0:y1, :], dtype=xp.float32)
+        lat_rad = xp.deg2rad(xp.asarray(lat_np[y0:y1, :], dtype=xp.float64))
+        lon_rad = xp.deg2rad(xp.asarray(lon_np[y0:y1, :], dtype=xp.float64))
+        gamma_rad = xp.asarray(gamma_np[y0:y1, :], dtype=xp.float64)
 
-        # Earth's *geographic* azimuth at the pixel: project Earth's 3D
-        # direction onto the local north/east basis and atan2.
-        earth_n = -sin_lat * cos_phi_e * cos_lon_diff + cos_lat * sin_phi_e
-        earth_e = -cos_phi_e * sin_lon_diff
-        earth_geo_az_rad = xp.arctan2(earth_e, earth_n)
+        cos_lat = xp.cos(lat_rad)
+        sin_lat = xp.sin(lat_rad)
+        slab_visibility = xp.zeros((y1 - y0, width), dtype=xp.int32)
 
-        # Convert to grid azimuth via the pixel's grid convergence.
-        # α_grid = (α_geo - γ) mod 2π, then quantise.
-        earth_grid_az_rad = xp.mod(earth_geo_az_rad - gamma_rad, 2.0 * np.pi)
-        k_idx = xp.mod(xp.round(earth_grid_az_rad / az_step_rad).astype(xp.int64), n_az)
+        for phi_e, lambda_e in zip(libration_lat_rad, libration_lon_rad, strict=True):
+            cos_phi_e = float(np.cos(phi_e))
+            sin_phi_e = float(np.sin(phi_e))
+            cos_lon_diff = xp.cos(lon_rad - float(lambda_e))
+            sin_lon_diff = xp.sin(lon_rad - float(lambda_e))
 
-        # Fancy-index the horizon at each pixel's azimuth bucket.
-        horizon_at_az = xp.take_along_axis(horizon, k_idx[None, :, :], axis=0)[0]
-        visibility_count += (earth_elev_deg > horizon_at_az).astype(xp.int32)
+            # Earth elevation: arcsin(e · u) where u is local up.
+            e_dot_u = cos_lat * cos_phi_e * cos_lon_diff + sin_lat * sin_phi_e
+            earth_elev_deg = xp.degrees(xp.arcsin(xp.clip(e_dot_u, -1.0, 1.0)))
 
-    visibility_fraction_dev = visibility_count.astype(xp.float64) / float(n_libration_samples)
-    visibility_fraction = visibility_fraction_dev.get() if use_gpu else visibility_fraction_dev
+            # Earth's *geographic* azimuth at the pixel: project Earth's 3D
+            # direction onto the local north/east basis and atan2.
+            earth_n = -sin_lat * cos_phi_e * cos_lon_diff + cos_lat * sin_phi_e
+            earth_e = -cos_phi_e * sin_lon_diff
+            earth_geo_az_rad = xp.arctan2(earth_e, earth_n)
+
+            # Convert to grid azimuth via the pixel's grid convergence.
+            # α_grid = (α_geo - γ) mod 2π, then quantise.
+            earth_grid_az_rad = xp.mod(earth_geo_az_rad - gamma_rad, 2.0 * np.pi)
+            k_idx = xp.mod(xp.round(earth_grid_az_rad / az_step_rad).astype(xp.int64), n_az)
+
+            # Fancy-index the horizon at each pixel's azimuth bucket.
+            horizon_at_az = xp.take_along_axis(horizon_slab, k_idx[None, :, :], axis=0)[0]
+            slab_visibility += (earth_elev_deg > horizon_at_az).astype(xp.int32)
+
+        if use_gpu:
+            visibility_count[y0:y1, :] = slab_visibility.get()
+        else:
+            visibility_count[y0:y1, :] = slab_visibility
+
+        # Free the slab's GPU footprint before paging in the next slab.
+        del horizon_slab, lat_rad, lon_rad, gamma_rad, cos_lat, sin_lat, slab_visibility
+        if use_gpu:
+            try:
+                xp.get_default_memory_pool().free_all_blocks()
+                xp.get_default_pinned_memory_pool().free_all_blocks()
+            except Exception:
+                pass
+        # Drop OS page-cache pages backing the mmap slab we just consumed.
+        # Without this, the kernel keeps the strided 36-azimuth-region
+        # reads in unified memory and steady-state pressure climbs slab
+        # by slab until OOM. ``MADV_DONTNEED`` is a hint, not a guarantee
+        # — but on Linux it's effective for backing-file mmap regions.
+        if isinstance(horizon_np, np.memmap):
+            with contextlib.suppress(AttributeError, OSError, ValueError):
+                horizon_np._mmap.madvise(_mmap_mod.MADV_DONTNEED)
+        gc.collect()
+
+    visibility_fraction = visibility_count.astype(np.float64) / float(n_libration_samples)
 
     out = xr.DataArray(
         visibility_fraction,

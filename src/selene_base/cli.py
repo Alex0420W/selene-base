@@ -187,6 +187,23 @@ def preprocess(
         exists=False,
         dir_okay=False,
     ),
+    azimuths_per_chunk: int | None = typer.Option(
+        None,
+        "--azimuths-per-chunk",
+        help=(
+            "Tiled mode only: per-azimuth working-buffer size for the chunked "
+            "+ mmap-backed horizon-profile path (v1.9). When omitted, the "
+            "driver auto-detects: at v1.5 resolutions (240m / 80m / 20m) no "
+            "chunking is applied (single-pass behaviour preserved), at 10m "
+            "the chunk size becomes 9, at 5m it becomes 2 — keeping the "
+            "per-chunk GPU working buffer under ~20 GiB on the GB10's 119 GB "
+            "unified memory. Pass an explicit positive integer ≤ 36 to "
+            "override; pass 36 to force the unchunked path even at fine "
+            "resolutions."
+        ),
+        min=1,
+        max=36,
+    ),
 ) -> None:
     """Reproject every available raw raster onto the common 240 m grid.
 
@@ -208,6 +225,7 @@ def preprocess(
             processed_dir=processed_dir,
             overwrite=overwrite,
             source_path=lola_source,
+            azimuth_chunk_size=azimuths_per_chunk,
         )
         typer.echo("")
         typer.echo(_preprocess_tiled.format_summary(tiled_results))
@@ -223,6 +241,11 @@ def preprocess(
         raise typer.BadParameter(
             "--region-code is only honoured in --tiled-per-region mode.",
             param_hint="--region-code",
+        )
+    if azimuths_per_chunk is not None:
+        raise typer.BadParameter(
+            "--azimuths-per-chunk is only honoured in --tiled-per-region mode.",
+            param_hint="--azimuths-per-chunk",
         )
     if lola_source is not None:
         raise typer.BadParameter(
@@ -413,6 +436,19 @@ def rank_per_region(
             "(repeatable). Default: all 9 regions."
         ),
     ),
+    lola_source: Path | None = typer.Option(
+        None,
+        "--lola-source",
+        help=(
+            "Tiled mode only: explicit path to a LOLA elevation source file "
+            "(.tif/.lbl/.img). Bypasses the PDS-naming auto-detect, matching "
+            "the same flag on `selene preprocess` so a single PGDA mosaic "
+            "(e.g. ldem_83s_10mpp_adj.tif) can flow through both stages of "
+            "the tiled pipeline."
+        ),
+        exists=False,
+        dir_okay=False,
+    ),
     method: str = typer.Option(
         "weighted_sum",
         "--method",
@@ -471,9 +507,15 @@ def rank_per_region(
             n_per_region=n_per_region,
             min_distance_km=min_distance_km,
             per_region_subdir=per_region_subdir,
+            source_path=lola_source,
         )
         return
 
+    if lola_source is not None:
+        raise typer.BadParameter(
+            "--lola-source is only honoured in --tiled-per-region mode.",
+            param_hint="--lola-source",
+        )
     if resolution is not None:
         raise typer.BadParameter(
             "--resolution is only honoured in --tiled-per-region mode.",
