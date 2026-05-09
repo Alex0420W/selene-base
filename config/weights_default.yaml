@@ -1,36 +1,35 @@
-# selene-base default weights (v1.8 — eighth criterion live).
+# selene-base default weights (v2.0 — EVA-disc PSR access replaces coupling).
 #
 # Eight criteria contribute to the aggregate score:
-# illumination, ice, coupling, los_to_earth, slope, thermal, hazard, seismic.
+# illumination, ice, eva_psr_access, los_to_earth, slope, thermal, hazard, seismic.
 #
-# v1.8 activates the seismic criterion (distance-to-nearest-scarp via
-# Mishra & Kumar 2022's south-polar lobate-scarp catalog) and bumps its
-# weight from 0.03 (placeholder while the criterion was inactive) to
-# 0.10 — slightly below slope's weight, reflecting that scarp distance
-# is one of several safety factors and is most relevant on long
-# habitat-occupation timescales (Civilini et al. 2023's relocated
-# moonquake-to-scarp clustering distance is order 10-50 km, with
-# epicentral uncertainty of order 10 km, so the criterion influences
-# multi-km site selection without dominating it). The other seven
-# weights are scaled by 0.90/0.97 ≈ 0.928 so the simplex still sums
-# to 1.00 without changing the relative ratios within the previous
-# seven-criterion vector.
+# v2.0 swaps the global spatial-coupling product (PSR-distance ×
+# ridge-distance multiplicative) for per-cell EVA-disc PSR access
+# (cold-class PSR area within a 2 km walking-EVA radius). The
+# methodological change is the headline; the *weight slot* stays at
+# 0.17 to preserve the v1.x relative balance (ice : illumination :
+# spatial-PSR-criterion = 0.17 : 0.17 : 0.17). This keeps the v1.9 → v2.0
+# comparison clean — any catalog-level shift attributable to the swap
+# reflects the methodology, not a re-weighting of the simplex.
+#
+# v1.8 activated the seismic criterion (distance-to-nearest-scarp via
+# Mishra & Kumar 2022's south-polar lobate-scarp catalog) at weight 0.10.
 #
 # Why 0.15 for los_to_earth (unchanged ratio from v1.1.0):
 # - Real physical criterion NASA prioritises in actual mission planning.
 # - More binary-ish than continuous, so weighted slightly less than
-#   illumination/ice/coupling.
+#   illumination/ice/eva_psr_access.
 #
 # This vector was chosen on physics-and-operations grounds, not by
 # fitting to validation data. Older vectors are preserved:
 #   config/weights_legacy.yaml      — five criteria (no coupling, no LOS).
 #   config/weights_legacy_v6.yaml   — six criteria (no LOS).
-# The seven-criterion v1.5 vector is the v1.8 vector minus seismic with
-# the remaining seven renormalised back to 1.00.
+# The v1.8 vector (seven criteria + coupling) is the v2.0 vector with
+# eva_psr_access renamed back to coupling.
 
 illumination: 0.17
 ice: 0.17
-coupling: 0.17
+eva_psr_access: 0.17
 los_to_earth: 0.14
 slope: 0.12
 thermal: 0.07

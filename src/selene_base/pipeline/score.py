@@ -11,8 +11,17 @@ Pipeline shape:
    renormalises across the criteria actually present.
 4. Write the final score COG to ``data/outputs/score_southpole.tif``.
 
-Week 3 covers all six criteria; missing source data (Diviner, LEND,
-scarps) makes the relevant criterion skip cleanly.
+v2.0 swaps the global spatial-coupling product (PSR-distance ×
+ridge-distance) for the per-cell EVA-disc PSR access criterion
+(:mod:`selene_base.criteria.eva_psr_access`), aligning with NASA's
+documented walking-EVA framing (EVA-EXP-0070 Rev D, A3GT LPSC 2025).
+The coupling module remains in tree for the legacy ``coupling-sweep``
+sensitivity utility but is no longer in the active criterion set.
+
+Week 3 covered the original six criteria; v1.5+ added LOS-to-Earth;
+v1.8 activated seismic; v2.0 swapped coupling for eva_psr_access.
+Missing source data (Diviner, LEND, scarps) makes the relevant
+criterion skip cleanly.
 """
 
 from __future__ import annotations
@@ -29,7 +38,7 @@ import xarray as xr
 import yaml
 
 from selene_base.criteria import (
-    coupling as coupling_criterion,
+    eva_psr_access as eva_psr_access_criterion,
 )
 from selene_base.criteria import (
     hazard as hazard_criterion,
@@ -252,43 +261,33 @@ def _ice_score(
     return out_path
 
 
-def _coupling_score(
+def _eva_psr_access_score(
     processed_dir: Path,
     *,
     pixel_size_m: float,
     overwrite: bool,
     echo: Callable[[str], None],
     raw_dir: Path,
-    coupling_distance_km: float = 5.0,
 ) -> Path | None:
-    illum_cog = processed_dir / "illumination_southpole_240m.tif"
-    slope_deg_cog = processed_dir / "lola_slope_deg_southpole_240m.tif"
-    if not illum_cog.exists() or not slope_deg_cog.exists():
+    temp_max_cog = processed_dir / "diviner_temp_max_southpole_240m.tif"
+    if not temp_max_cog.exists():
         echo(
-            "[skip] coupling: needs illumination COG + slope_deg COG "
-            "(both written by `selene preprocess`)"
+            "[skip] eva_psr_access: Diviner PRP temp_max COG not present at "
+            f"{temp_max_cog}; run `selene download diviner` then `selene preprocess`"
         )
         return None
 
     scored_dir = processed_dir / SCORED_SUBDIR
-    out_cog = scored_dir / "coupling_score_southpole_240m.tif"
+    out_cog = scored_dir / "eva_psr_access_score_southpole_240m.tif"
     if out_cog.exists() and not overwrite:
-        echo(f"[skip] coupling: {out_cog.name} already cached")
+        echo(f"[skip] eva_psr_access: {out_cog.name} already cached")
         return out_cog
 
-    echo("[compute] coupling: derive distance-to-PSR + distance-to-sunlit-ridge")
-    illum = _open_cog(illum_cog)
-    slope_deg = _open_cog(slope_deg_cog)
-    distance_psr = coupling_criterion.derive_distance_to_psr(illum, pixel_size_m=pixel_size_m)
-    distance_ridge = coupling_criterion.derive_distance_to_sunlit_ridge(
-        illum, slope_deg, pixel_size_m=pixel_size_m
-    )
-    echo(f"[compute] coupling product (cap = {coupling_distance_km:.1f} km)")
-    score = coupling_criterion.compute(
-        distance_psr, distance_ridge, coupling_distance_km=coupling_distance_km
-    )
-    out_path = cache_processed(score, "coupling_score", scored_dir, overwrite=overwrite)
-    echo(f"[done] coupling -> {out_path}")
+    echo(f"[compute] eva_psr_access from {temp_max_cog.name} (2 km EVA disc, T<110 K)")
+    temp_max = _open_cog(temp_max_cog)
+    score = eva_psr_access_criterion.compute(temp_max, pixel_size_m=pixel_size_m)
+    out_path = cache_processed(score, "eva_psr_access_score", scored_dir, overwrite=overwrite)
+    echo(f"[done] eva_psr_access -> {out_path}")
     return out_path
 
 
@@ -392,7 +391,7 @@ def _seismic_score(
 CRITERION_FUNCS: dict[str, Callable[..., Path | None]] = {
     "slope": _slope_score,
     "illumination": _illumination_score,
-    "coupling": _coupling_score,
+    "eva_psr_access": _eva_psr_access_score,
     "hazard": _hazard_score,
     "thermal": _thermal_score,
     "ice": _ice_score,

@@ -29,6 +29,7 @@ emits a deprecation warning).
 from __future__ import annotations
 
 import warnings
+from datetime import UTC
 from pathlib import Path
 from typing import TypedDict
 
@@ -46,6 +47,11 @@ WUELLER_SITES_CSV = Path(__file__).parent / "data" / "wueller_2026_sites.csv"
 WUELLER_SOURCE_CRS = "+proj=longlat +R=1737400 +no_defs"
 SYNTHETIC_PLACEHOLDER_PREFIX = "synthetic-placeholder-"
 DEFAULT_MATCH_THRESHOLD_KM = 5.0
+
+# v2.0 per-launch-year cross-check (NASA HLS continuous-lit threshold).
+HLS_CONTINUOUS_LIT_THRESHOLD_DAYS = 10
+ARTEMIS_IV_LAUNCH_YEAR = 2028
+LAUNCH_YEARS: tuple[int, ...] = (2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032)
 
 POLAR_PROJ = (
     "+proj=stere +lat_0=-90 +lat_ts=-90 +lon_0=0 +k=1 +x_0=0 +y_0=0 +R=1737400 +no_defs +type=crs"
@@ -628,4 +634,216 @@ def render_summary(result: WuellerComparisonResult) -> str:
             "*** Reminder: numbers above are computed against the synthetic "
             "fallback, not the real Wueller 2026 shapefile. ***"
         )
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# v2.0 per-launch-year cross-check.
+# --------------------------------------------------------------------------
+class PerSiteLaunchYearRecord(TypedDict):
+    selene_site_id: str
+    matched_wueller_id: str
+    match_distance_km: float
+    wueller_sundays: dict[str, int]
+    passes_hls_2028: bool
+    passes_hls_any_year_25_32: bool
+
+
+class LaunchYearAggregate(TypedDict):
+    total_selene_sites: int
+    selene_sites_with_wueller_match: int
+    matched_sites_passing_hls_2028: int
+    matched_sites_passing_hls_any_year: int
+    per_year_pass_count: dict[str, int]
+
+
+class LaunchYearMetadata(TypedDict):
+    selene_version: str
+    comparison_date: str
+    hls_continuous_lit_threshold_days: int
+    match_radius_km: float
+
+
+class LaunchYearCrossCheckResult(TypedDict):
+    metadata: LaunchYearMetadata
+    per_site_records: list[PerSiteLaunchYearRecord]
+    aggregate: LaunchYearAggregate
+
+
+def _resolve_sundays_columns(wueller_sites: gpd.GeoDataFrame) -> dict[int, str]:
+    """Map each launch year to its actual DBF column name.
+
+    The Wueller shapefile capitalises ``SunDays`` inconsistently: most
+    columns are ``SunDays25``..``SunDays32`` but ``Sundays30`` and
+    ``Sundays32`` use a lower-case ``d``. Resolve case-insensitively so
+    callers don't have to track which year hits which spelling.
+    """
+    available = {c.lower(): c for c in wueller_sites.columns}
+    mapping: dict[int, str] = {}
+    missing: list[int] = []
+    for year in LAUNCH_YEARS:
+        key = f"sundays{year % 100:02d}"
+        if key in available:
+            mapping[year] = available[key]
+        else:
+            missing.append(year)
+    if missing:
+        raise ValueError(
+            "Wueller GeoDataFrame is missing SunDays columns for launch year(s) "
+            f"{missing}; available columns: {sorted(wueller_sites.columns.tolist())}"
+        )
+    return mapping
+
+
+def evaluate_per_launch_year(
+    comparison: WuellerComparisonResult,
+    wueller_sites: gpd.GeoDataFrame,
+    *,
+    selene_version: str = "v2.0",
+    hls_threshold_days: int = HLS_CONTINUOUS_LIT_THRESHOLD_DAYS,
+    artemis_iv_year: int = ARTEMIS_IV_LAUNCH_YEAR,
+) -> LaunchYearCrossCheckResult:
+    """Per-launch-year HLS continuous-lit cross-check (v2.0).
+
+    For every selene site that matched a Wueller site within the
+    comparison's match threshold, look up the matched Wueller site's
+    SunDays values for each launch year 2025–2032 and report whether
+    that site clears NASA's HLS continuous-lit threshold
+    (``≥ hls_threshold_days`` Earth-days). Selene sites without a
+    matched Wueller site are listed with a ``passes_hls_*`` of ``False``
+    and ``wueller_sundays`` empty.
+
+    The 2028 number is the headline — it's the Artemis IV target year.
+    Aggregate counts include per-year totals and a "passes any year
+    2025-2032" union for context.
+
+    Args:
+        comparison: The result from :func:`compare_sites`.
+        wueller_sites: The Wueller GeoDataFrame from
+            :func:`load_wueller_sites`. Must carry ``wueller_site_id``
+            plus the eight ``SunDays{25..32}`` columns (case-insensitive).
+        selene_version: Version string written into the metadata block.
+        hls_threshold_days: The HLS continuous-lit threshold in
+            Earth-days. Default 10.
+        artemis_iv_year: Headline launch year. Default 2028.
+
+    Returns:
+        :class:`LaunchYearCrossCheckResult` with per-site records and
+        aggregate pass counts.
+
+    Raises:
+        ValueError: If ``wueller_sites`` is missing any SunDays column,
+            or if ``hls_threshold_days`` is non-positive, or if
+            ``artemis_iv_year`` is outside ``LAUNCH_YEARS``.
+    """
+    from datetime import datetime
+
+    if hls_threshold_days <= 0:
+        raise ValueError(f"hls_threshold_days must be positive, got {hls_threshold_days!r}")
+    if artemis_iv_year not in LAUNCH_YEARS:
+        raise ValueError(f"artemis_iv_year must be one of {LAUNCH_YEARS}, got {artemis_iv_year!r}")
+
+    sundays_cols = _resolve_sundays_columns(wueller_sites)
+
+    # Index Wueller sites by id for O(1) lookup.
+    wueller_by_id: dict[str, dict[int, int]] = {}
+    for _, row in wueller_sites.iterrows():
+        site_id = str(row["wueller_site_id"])
+        wueller_by_id[site_id] = {year: int(row[col]) for year, col in sundays_cols.items()}
+
+    per_site: list[PerSiteLaunchYearRecord] = []
+    matched_count = 0
+    pass_artemis_iv = 0
+    pass_any_year = 0
+    per_year_passes: dict[int, int] = {year: 0 for year in LAUNCH_YEARS}
+
+    for entry in comparison["per_selene_site"]:
+        selene_id = entry["site_id"]
+        if entry["matched"]:
+            matched_count += 1
+            matched_id = entry["nearest_wueller_id"]
+            match_dist = float(entry["distance_km"])
+            sundays = wueller_by_id.get(matched_id, {})
+            year_pass = {y: sundays.get(y, 0) >= hls_threshold_days for y in LAUNCH_YEARS}
+            for y, ok in year_pass.items():
+                if ok:
+                    per_year_passes[y] += 1
+            passes_iv = bool(year_pass[artemis_iv_year])
+            passes_any = bool(any(year_pass.values()))
+            if passes_iv:
+                pass_artemis_iv += 1
+            if passes_any:
+                pass_any_year += 1
+            per_site.append(
+                {
+                    "selene_site_id": selene_id,
+                    "matched_wueller_id": matched_id,
+                    "match_distance_km": match_dist,
+                    "wueller_sundays": {str(y): int(sundays.get(y, 0)) for y in LAUNCH_YEARS},
+                    "passes_hls_2028": passes_iv,
+                    "passes_hls_any_year_25_32": passes_any,
+                }
+            )
+        else:
+            per_site.append(
+                {
+                    "selene_site_id": selene_id,
+                    "matched_wueller_id": "",
+                    "match_distance_km": float("nan"),
+                    "wueller_sundays": {},
+                    "passes_hls_2028": False,
+                    "passes_hls_any_year_25_32": False,
+                }
+            )
+
+    aggregate: LaunchYearAggregate = {
+        "total_selene_sites": comparison["n_selene_sites"],
+        "selene_sites_with_wueller_match": matched_count,
+        "matched_sites_passing_hls_2028": pass_artemis_iv,
+        "matched_sites_passing_hls_any_year": pass_any_year,
+        "per_year_pass_count": {str(y): int(per_year_passes[y]) for y in LAUNCH_YEARS},
+    }
+    metadata: LaunchYearMetadata = {
+        "selene_version": selene_version,
+        "comparison_date": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "hls_continuous_lit_threshold_days": int(hls_threshold_days),
+        "match_radius_km": float(comparison["match_threshold_km"]),
+    }
+    return {
+        "metadata": metadata,
+        "per_site_records": per_site,
+        "aggregate": aggregate,
+    }
+
+
+def render_launch_year_summary(result: LaunchYearCrossCheckResult) -> str:
+    """Stdout-ready summary of the per-launch-year cross-check."""
+    agg = result["aggregate"]
+    meta = result["metadata"]
+    lines: list[str] = []
+    lines.append("Wueller per-launch-year HLS cross-check (v2.0):")
+    lines.append(
+        f"  threshold: ≥ {meta['hls_continuous_lit_threshold_days']} Earth-days continuous-lit"
+        f"   match radius: {meta['match_radius_km']:.1f} km"
+    )
+    lines.append(
+        f"  selene sites: {agg['total_selene_sites']}    "
+        f"with Wueller match: {agg['selene_sites_with_wueller_match']}"
+    )
+    lines.append(
+        f"  matched sites passing HLS 2028 (Artemis IV): "
+        f"{agg['matched_sites_passing_hls_2028']:>3} / "
+        f"{agg['selene_sites_with_wueller_match']}"
+    )
+    lines.append(
+        f"  matched sites passing HLS in ANY year 2025-2032: "
+        f"{agg['matched_sites_passing_hls_any_year']:>3} / "
+        f"{agg['selene_sites_with_wueller_match']}"
+    )
+    lines.append("")
+    lines.append("  per-year pass counts (matched-site basis):")
+    header = "    " + " ".join(f"{y:>5d}" for y in LAUNCH_YEARS)
+    counts = "    " + " ".join(f"{agg['per_year_pass_count'][str(y)]:>5d}" for y in LAUNCH_YEARS)
+    lines.append(header)
+    lines.append(counts)
     return "\n".join(lines)

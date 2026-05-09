@@ -78,6 +78,14 @@ def weights_yaml(tmp_path: Path) -> Path:
         "thermal": 0.10,
         "hazard": 0.10,
         "seismic": 0.10,
+        # v2.0 criterion. The smoke test inherits Diviner data from the
+        # repo's ``data/raw/`` (the score step's ``raw_dir`` defaults
+        # CWD-relative), which causes ``preprocess.run`` to emit a
+        # ``diviner_temp_max`` COG into the test's tmp processed dir
+        # and trip ``_eva_psr_access_score`` into computing. Including
+        # the weight here keeps the aggregator happy without altering
+        # what the smoke test exercises.
+        "eva_psr_access": 0.10,
     }
     p = tmp_path / "weights.yaml"
     p.write_text(yaml.safe_dump(weights))
