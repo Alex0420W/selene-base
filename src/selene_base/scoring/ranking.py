@@ -27,7 +27,7 @@ from selene_base.data.load import LUNAR_GEOGRAPHIC_CRS
 DEFAULT_CRITERIA = (
     "slope",
     "illumination",
-    "coupling",
+    "eva_psr_access",
     "thermal",
     "ice",
     "hazard",

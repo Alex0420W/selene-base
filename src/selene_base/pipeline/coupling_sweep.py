@@ -102,7 +102,14 @@ def run(
 
     scored_dir = processed_dir / "scored"
     sub_scores = load_sub_scores(scored_dir) if scored_dir.exists() else {}
-    score_maps_no_coupling = {name: arr for name, arr in sub_scores.items() if name != "coupling"}
+    # v2.0: also drop eva_psr_access from the sweep's "everything else"
+    # set — both criteria address PSR access, so including v2.0's
+    # eva_psr_access alongside swept coupling would double-count the
+    # PSR-related signal at every sweep step. The sweep keeps its v1.x
+    # semantics (only coupling varies; the rest of the active set is
+    # held fixed and PSR-orthogonal).
+    excluded = {"coupling", "eva_psr_access"}
+    score_maps_no_coupling = {name: arr for name, arr in sub_scores.items() if name not in excluded}
     if not score_maps_no_coupling:
         raise FileNotFoundError(
             f"no per-criterion score COGs in {scored_dir}; run `selene score` first"

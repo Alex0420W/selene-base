@@ -21,12 +21,16 @@ from selene_base.validation.wueller_comparison import (
     DEFAULT_MATCH_THRESHOLD_KM,
     WuellerComparisonResult,
     compare_sites,
+    evaluate_per_launch_year,
     load_wueller_sites,
+    render_launch_year_summary,
     render_summary,
 )
 
 DEFAULT_OUTPUTS_DIR = Path("data/outputs")
 DEFAULT_PER_REGION_SITES = DEFAULT_OUTPUTS_DIR / "per_region" / "sites.geojson"
+V2_OUTPUTS_SUBDIR = "v2"
+LAUNCH_YEAR_JSON_NAME = "wueller_comparison_with_launch_year.json"
 
 
 def run(
@@ -72,6 +76,21 @@ def run(
 
     echo(f"[done] wueller_comparison.json -> {json_path}")
     echo(f"[done] wueller_comparison.csv -> {csv_path}")
+
+    # v2.0: per-launch-year HLS cross-check using SunDays25-32 columns.
+    try:
+        launch_year_result = evaluate_per_launch_year(result, wueller_sites)
+    except ValueError as exc:
+        echo(f"[skip] launch-year cross-check: {exc}")
+    else:
+        v2_dir = outputs_dir / V2_OUTPUTS_SUBDIR
+        v2_dir.mkdir(parents=True, exist_ok=True)
+        ly_path = v2_dir / LAUNCH_YEAR_JSON_NAME
+        ly_path.write_text(json.dumps(launch_year_result, indent=2), encoding="utf-8")
+        echo(f"[done] {LAUNCH_YEAR_JSON_NAME} -> {ly_path}")
+        echo("")
+        echo(render_launch_year_summary(launch_year_result))
+
     echo("")
     echo(render_summary(result))
     return result

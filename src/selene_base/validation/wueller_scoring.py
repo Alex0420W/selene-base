@@ -45,7 +45,7 @@ DEFAULT_SCORED_SUBDIR = "scored"
 CRITERION_RASTER_FILENAMES: dict[str, str] = {
     "slope": "slope_score_southpole_240m.tif",
     "illumination": "illumination_score_southpole_240m.tif",
-    "coupling": "coupling_score_southpole_240m.tif",
+    "eva_psr_access": "eva_psr_access_score_southpole_240m.tif",
     "thermal": "thermal_score_southpole_240m.tif",
     "ice": "ice_score_southpole_240m.tif",
     "los_to_earth": "los_to_earth_score_southpole_240m.tif",
