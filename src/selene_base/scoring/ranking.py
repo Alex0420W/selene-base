@@ -32,7 +32,7 @@ DEFAULT_CRITERIA = (
     "multi_volatile",
     "hazard",
     "los_to_earth",
-    "seismic",
+    "pgv_seismic",
 )
 
 

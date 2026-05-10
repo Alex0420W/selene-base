@@ -76,19 +76,20 @@ def weights_yaml(tmp_path: Path) -> Path:
         "slope": 0.15,
         "thermal": 0.10,
         "hazard": 0.10,
-        "seismic": 0.10,
-        # v2.0 + v2.1 criteria. The smoke test inherits Diviner data
-        # from the repo's ``data/raw/`` (the score step's ``raw_dir``
-        # defaults CWD-relative), which causes ``preprocess.run`` to
-        # emit ``diviner_temp_max`` and ``diviner_ice_depth`` COGs
-        # into the test's tmp processed dir. Both v2.0's
-        # ``eva_psr_access`` and v2.1's ``multi_volatile`` consume
-        # ``temp_max``, so the score step computes both. Including the
-        # weights here keeps the aggregator happy without altering
-        # what the smoke test exercises. The v1.x ``ice`` weight is
-        # gone because v2.1 swapped it for ``multi_volatile``.
+        # v2.0 + v2.1 + v2.2 criteria. The smoke test inherits Diviner
+        # + scarp data from the repo's ``data/raw/`` and the in-repo
+        # bundled scarp catalog (``data/raw`` is CWD-relative; bundled
+        # scarps are unconditional via the criteria/data/ tree). That
+        # causes ``score.run`` to compute ``eva_psr_access``,
+        # ``multi_volatile``, and ``pgv_seismic`` even though the
+        # smoke fixture only preprocessed synthetic LOLA. Including
+        # all three here keeps the aggregator happy without altering
+        # what the smoke test exercises. The v1.x ``ice`` and
+        # ``seismic`` weights are gone because v2.1 swapped ice →
+        # multi_volatile and v2.2 swapped seismic → pgv_seismic.
         "eva_psr_access": 0.10,
         "multi_volatile": 0.10,
+        "pgv_seismic": 0.10,
     }
     p = tmp_path / "weights.yaml"
     p.write_text(yaml.safe_dump(weights))

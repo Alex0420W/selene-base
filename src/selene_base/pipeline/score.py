@@ -19,14 +19,20 @@ v2.1 swaps the single ``ice`` criterion (PRP ice-depth + PSR-proximity
 bonus) for the three-class volatile-access criterion
 (:mod:`selene_base.criteria.multi_volatile`), distinguishing H₂O
 (<110 K), CO₂/NH₃ (<66 K), and ultra-cold (<60 K) thermal classes
-inside the same 2 km EVA disc. Both legacy modules stay in tree for
+inside the same 2 km EVA disc. v2.2 swaps the v1.8 distance-to-
+nearest-scarp seismic criterion for a per-cell PGV-style attenuation
+kernel (:mod:`selene_base.criteria.pgv_seismic`) that aggregates
+contributions from every mapped scarp within a 5L = 250 km cutoff
+(L = 50 km, anchored to Watters 2024 PSJ strong-shaking distance).
+All three legacy modules (coupling, ice, seismic) stay in tree for
 sensitivity / comparison utilities but are no longer in the active
 criterion set.
 
 Week 3 covered the original six criteria; v1.5+ added LOS-to-Earth;
 v1.8 activated seismic; v2.0 swapped coupling for eva_psr_access;
-v2.1 swapped ice for multi_volatile. Missing source data (Diviner,
-LEND, scarps) makes the relevant criterion skip cleanly.
+v2.1 swapped ice for multi_volatile; v2.2 swapped seismic for
+pgv_seismic. Missing source data (Diviner, LEND, scarps) makes the
+relevant criterion skip cleanly.
 """
 
 from __future__ import annotations
@@ -58,7 +64,7 @@ from selene_base.criteria import (
     multi_volatile as multi_volatile_criterion,
 )
 from selene_base.criteria import (
-    seismic as seismic_criterion,
+    pgv_seismic as pgv_seismic_criterion,
 )
 from selene_base.criteria import (
     slope as slope_criterion,
@@ -346,7 +352,7 @@ def _los_to_earth_score(
     return out_path
 
 
-def _seismic_score(
+def _pgv_seismic_score(
     processed_dir: Path,
     *,
     pixel_size_m: float,
@@ -355,7 +361,7 @@ def _seismic_score(
     raw_dir: Path,
 ) -> Path | None:
     scored_dir = processed_dir / SCORED_SUBDIR
-    out_cog = scored_dir / "seismic_score_southpole_240m.tif"
+    out_cog = scored_dir / "pgv_seismic_score_southpole_240m.tif"
 
     # User-supplied overrides take precedence over the bundled default;
     # the in-repo Mishra & Kumar 2022 shapefile (v1.8+) is the fallback
@@ -363,12 +369,12 @@ def _seismic_score(
     candidates = [
         raw_dir / "scarps" / "scarps_southpole.geojson",
         raw_dir / "scarps" / "scarps_southpole.csv",
-        seismic_criterion.BUNDLED_MISHRA_KUMAR_2022,
+        pgv_seismic_criterion.BUNDLED_MISHRA_KUMAR_2022,
     ]
     scarps_path = next((p for p in candidates if p.exists()), None)
     if scarps_path is None:
         echo(
-            "[skip] seismic: no scarp catalog available — neither a "
+            "[skip] pgv_seismic: no scarp catalog available — neither a "
             "user-supplied override at "
             f"{candidates[0].as_posix()} nor the bundled Mishra & Kumar "
             f"2022 shapefile at {candidates[2].as_posix()} could be found"
@@ -376,24 +382,24 @@ def _seismic_score(
         return None
 
     if out_cog.exists() and not overwrite:
-        echo(f"[skip] seismic: {out_cog.name} already cached")
+        echo(f"[skip] pgv_seismic: {out_cog.name} already cached")
         return out_cog
 
     # Need a target grid in the projected CRS — borrow it from the LOLA COG.
     lola_cog = processed_dir / "lola_southpole_240m.tif"
     if not lola_cog.exists():
         echo(
-            "[skip] seismic: needs a target grid; run `selene preprocess` "
+            "[skip] pgv_seismic: needs a target grid; run `selene preprocess` "
             "to produce lola_southpole_240m.tif first"
         )
         return None
 
     label = (
         "Mishra & Kumar 2022 (bundled)"
-        if scarps_path == seismic_criterion.BUNDLED_MISHRA_KUMAR_2022
+        if scarps_path == pgv_seismic_criterion.BUNDLED_MISHRA_KUMAR_2022
         else scarps_path.name
     )
-    echo(f"[compute] seismic from {label}")
+    echo(f"[compute] pgv_seismic from {label} (L=50 km, cutoff=250 km)")
     if scarps_path.suffix.lower() == ".csv":
         import pandas as pd
         from shapely.geometry import Point
@@ -406,10 +412,26 @@ def _seismic_score(
     else:
         scarps = gpd.read_file(scarps_path)
     target_grid = _open_cog(lola_cog)
-    distance = seismic_criterion.distance_to_scarps(scarps, target_grid)
-    score = seismic_criterion.compute(distance)
-    out_path = cache_processed(score, "seismic_score", scored_dir, overwrite=overwrite)
-    echo(f"[done] seismic -> {out_path}")
+    components = pgv_seismic_criterion.compute_components(scarps, target_grid)
+    # Persist score + diagnostic siblings (cum_pgv, nearest_scarp_distance_km,
+    # n_contributing_scarps) for downstream reporting.
+    out_path = cache_processed(
+        components["score"], "pgv_seismic_score", scored_dir, overwrite=overwrite
+    )
+    cache_processed(components["cum_pgv"], "pgv_seismic_cum_pgv", scored_dir, overwrite=overwrite)
+    cache_processed(
+        components["nearest_scarp_distance_km"],
+        "pgv_seismic_nearest_scarp_distance_km",
+        scored_dir,
+        overwrite=overwrite,
+    )
+    cache_processed(
+        components["n_contributing_scarps"].astype(np.float32),
+        "pgv_seismic_n_contributing_scarps",
+        scored_dir,
+        overwrite=overwrite,
+    )
+    echo(f"[done] pgv_seismic -> {out_path}")
     return out_path
 
 
@@ -421,7 +443,7 @@ CRITERION_FUNCS: dict[str, Callable[..., Path | None]] = {
     "thermal": _thermal_score,
     "multi_volatile": _multi_volatile_score,
     "los_to_earth": _los_to_earth_score,
-    "seismic": _seismic_score,
+    "pgv_seismic": _pgv_seismic_score,
 }
 
 

@@ -1,27 +1,34 @@
-# selene-base default weights (v2.1 — multi-class volatile criterion replaces ice).
+# selene-base default weights (v2.2 — PGV-style seismic kernel replaces distance-to-scarp).
 #
 # Eight criteria contribute to the aggregate score:
-# illumination, multi_volatile, eva_psr_access, los_to_earth, slope, thermal, hazard, seismic.
+# illumination, multi_volatile, eva_psr_access, los_to_earth, slope, thermal, hazard, pgv_seismic.
 #
-# v2.1 swaps the v1.x single ``ice`` criterion (PRP depth + PSR-proximity
-# bonus combined) for the three-class **multi_volatile** criterion that
-# distinguishes thermal-class accessibility within the 2 km walking-EVA
-# disc: H₂O (<110 K), CO₂/NH₃ (<66 K), and ultra-cold (<60 K). Mirrors
-# NASA's documented volatile-diversity priority (Paige 2010; Hayne 2020)
-# and Wueller 2026's per-class treatment. Default sub-weights inside
-# multi_volatile are equal at (1/3, 1/3, 1/3) — agnostic on NASA's
-# preference ordering between volatile classes.
+# v2.2 swaps the v1.8 distance-to-nearest-scarp seismic criterion (logistic
+# at d_safe = 50 km) for a per-cell PGV-style attenuation kernel: each
+# scarp contributes exp(-d/L) at L = 50 km, summed over all scarps within
+# 5L = 250 km cutoff. Mirrors Watters 2024 PSJ's Mw 5.3 strong-shaking
+# distance and surfaces multi-scarp-cluster exposure that v1.8's
+# distance-to-nearest collapsed.
+#
+# v2.1 swapped the single ``ice`` criterion for the three-class
+# **multi_volatile** criterion (H₂O <110 K, CO₂/NH₃ <66 K, ultra-cold
+# <60 K) inside the 2 km walking-EVA disc.
 #
 # v2.0 swapped the v1.x global spatial-coupling product for per-cell
 # EVA-disc PSR access at the same 0.17 weight slot.
 #
-# **The weight slot stays at 0.17** for both v2.0 and v2.1 swaps — same
-# value the v1.x single ``ice`` criterion held — so any catalog-level
-# shift attributable to either swap reflects the new criterion's
-# geometry, not a moved weight on the simplex.
+# **Weight slots are unchanged across all three v2.x swaps** — each new
+# criterion sits in the slot v1.x's ``coupling`` (0.17), ``ice`` (0.17),
+# and ``seismic`` (0.10) originally held, so any catalog-level shift
+# attributable to any swap reflects the new criterion's geometry, not a
+# moved weight on the simplex.
 #
-# v1.8 activated the seismic criterion (distance-to-nearest-scarp via
-# Mishra & Kumar 2022's south-polar lobate-scarp catalog) at weight 0.10.
+# Why 0.10 for pgv_seismic (unchanged from v1.8 seismic):
+# Scarp distance is one of multiple safety factors and is most relevant
+# on long habitat-occupation timescales (Civilini et al. 2023's
+# relocated-moonquake-to-scarp clustering distance is order 10-50 km,
+# with epicentral uncertainty ~10 km, so the criterion influences
+# multi-km site selection without dominating it).
 #
 # Why 0.15 for los_to_earth (unchanged ratio from v1.1.0):
 # - Real physical criterion NASA prioritises in actual mission planning.
@@ -32,9 +39,9 @@
 # fitting to validation data. Older vectors are preserved:
 #   config/weights_legacy.yaml      — five criteria (no coupling, no LOS).
 #   config/weights_legacy_v6.yaml   — six criteria (no LOS).
-# The v1.8 vector (seven criteria + coupling + ice) is the v2.1 vector
-# with eva_psr_access renamed back to coupling and multi_volatile renamed
-# back to ice.
+# The v1.8 vector (coupling + ice + distance-to-nearest seismic) is the
+# v2.2 vector with eva_psr_access → coupling, multi_volatile → ice, and
+# pgv_seismic → seismic.
 
 illumination: 0.17
 multi_volatile: 0.17
@@ -43,4 +50,4 @@ los_to_earth: 0.14
 slope: 0.12
 thermal: 0.07
 hazard: 0.06
-seismic: 0.10
+pgv_seismic: 0.10

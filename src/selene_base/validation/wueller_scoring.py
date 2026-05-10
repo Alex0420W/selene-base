@@ -49,6 +49,7 @@ CRITERION_RASTER_FILENAMES: dict[str, str] = {
     "thermal": "thermal_score_southpole_240m.tif",
     "multi_volatile": "multi_volatile_score_southpole_240m.tif",
     "los_to_earth": "los_to_earth_score_southpole_240m.tif",
+    "pgv_seismic": "pgv_seismic_score_southpole_240m.tif",
 }
 
 RAW_RASTER_FILENAMES: dict[str, str] = {
